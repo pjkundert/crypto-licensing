@@ -1,0 +1,33 @@
+#+title: Cryptographically Signed License Issuance with Payment in Cryptocurrency
+#+date: 2022-01-25 12:32:00
+#+draft: false
+#+EXPORT_FILE_NAME: README.pdf
+#+STARTUP: org-startup-with-inline-images inlineimages
+#+STARTUP: org-latex-tables-centered nil
+#+OPTIONS: ^:nil # Disable sub/superscripting with bare _; _{...} still works
+#+OPTIONS: toc:nil
+
+#+BEGIN_SRC emacs-lisp :noweb no-export :exports results
+;; Tables not centered
+(
+ setq org-latex-tables-centered nil
+      org-src-preserve-indentation t
+      org-edit-src-content-indentation 0
+)
+nil
+#+END_SRC
+
+#+RESULTS:
+
+#+BEGIN_ABSTRACT
+Licensing software and getting paid for it has become extremely difficult, due to government,
+regulatory and banking interference.
+
+The =crypto-licensing= Python module allows you automatically and securely issue licenses, and get
+paid in various cryptocurrencies.
+#+END_ABSTRACT
+#+TOC: headlines 2
+
+* Confirmation using Ed25519 Signatures
+* Payment with Cryptocurrencies
+* Issuance via Web API
