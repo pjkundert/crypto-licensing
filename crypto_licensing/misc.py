@@ -573,7 +573,7 @@ def config_paths( filename, extra=None ):
     do this manually.
 
     """
-    yield os.path.join( os.path.dirname( __file__ ), '..', '..', filename )     # installation root dir
+    yield os.path.join( os.path.dirname( __file__ ), filename )			# installation root dir
     yield os.path.join( os.getenv( 'APPDATA', os.sep + 'etc' ), filename )      # global app data dir, eg. /etc/
     yield os.path.join( os.path.expanduser( '~' ), '.'+CONFIG_BASE, filename )  # user dir, ~username/.crypto-licensing/name
     yield os.path.join( os.path.expanduser( '~' ), '.' + filename )		# user dir, ~username/.name

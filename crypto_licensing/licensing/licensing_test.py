@@ -104,10 +104,10 @@ def licensing_cli( number, tests=None, address=None ):
         query	= query,
         number	= number,
     )
-    log.detail( "Client number={}; url: {}".format( number, misc.reprlib.repr( url )))
+    log.detail( "Client number={}; url: {}".format( number, reprlib.repr( url )))
     response			= urlopen( url ).read()
     assert response
-    log.detail( "Client number={}; response: {}".format( number, misc.reprlib.repr( response )))
+    log.detail( "Client number={}; response: {}".format( number, reprlib.repr( response )))
     data			= json.loads( response )
     #print( data )
     assert data['list'] and data['list'][0]['signature'] == 'xnSfp/GDWsAvxVqarn+7AG8l0TIlSXD5kdHzb0sRxZsrm7o3uYLbPNxkcgvLV62m9V7BhKCU0unaMweSWX8TCA=='

@@ -170,7 +170,8 @@ def db_setup():
     assert os.access( db_file_path, os.W_OK ), \
         "Cannot access licensing DB: {}".format( db_file_path )
 
-    # OK, the DB has been initialized, and is at db_file_path
+    # OK, the DB has been initialized, and is at db_file_path.
+    log.warning( "Opening DB at {path}".format( path=db_file_path ))
     global db
     db				= web.database( dbn='sqlite', db=db_file_path )
     assert hasattr( db, 'query' ), \
