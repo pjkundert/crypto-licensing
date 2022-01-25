@@ -22,11 +22,26 @@ except ImportError: # Python3
 from ..misc		import reprlib
 from ..			import licensing
 
-# If web.py is unavailable, licensing.main cannot be used
+# If web.py or cpppo is unavailable, licensing.main cannot be used
 try:
-    from licensing.main import main as licensing_main
+    from .main import main as licensing_main
 except:
     licensing_main		= None
+
+try:
+    import web
+except:
+    web				= None
+try:
+    from cpppo.server import network		# network.bench
+    from cpppo import dotdict			# multiprocessing.Manager().apidict
+except ImportError:
+    network			= None
+try:
+    import chacha20poly1305
+except:
+    chacha20poly1305		= None
+    
 
 log				= logging.getLogger( "lic.svr")
 
@@ -140,7 +155,7 @@ def licensing_bench():
         )
 
         # Start up the Web interface on a dynamic port, eg. "localhost:0"
-        failed			= cpppo.server.network.bench(
+        failed			= network.bench(
             server_func	= licensing_main,
             server_kwds	= licensing_svr_kwds,
             client_func	= licensing_cli,
@@ -157,16 +172,8 @@ def licensing_bench():
 
     return failed
 
-try:
-    import web
-except:
-    web				= None
-try:
-    import chacha20poly1305
-except:
-    chacha20poly1305		= None
-    
-@pytest.mark.skipif( not licensing_main or not web or not chacha20poly1305,
+
+@pytest.mark.skipif( not licensing_main or not web or not network or not chacha20poly1305,
                      reason="Licensing server needs web.py" )
 def test_licensing_bench( tmp_path ):
     print( "Changing CWD to {}".format( tmp_path ))

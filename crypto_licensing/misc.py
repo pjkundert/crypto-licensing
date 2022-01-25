@@ -85,7 +85,40 @@ __license__                     = "Dual License: GPLv3 (or later) and Commercial
 Miscellaneous functionality used by various other modules.
 """
 
+
+# 
+# Logging related tooling
+# 
 log				= logging.getLogger( "misc" )
+
+log_cfg				= {
+    "level":	logging.WARNING,
+    "datefmt":	'%Y-%m-%d %H:%M:%S',
+    #"format":	'%(asctime)s.%(msecs).03d %(threadName)10.10s %(name)-16.16s %(levelname)-8.8s %(funcName)-10.10s %(message)s',
+    "format":	'%(asctime)s %(name)-16.16s %(message)s',
+}
+
+log_levelmap 			= {
+    -2: logging.FATAL,
+    -1: logging.ERROR,
+    0: logging.WARNING,
+    1: logging.INFO,
+    2: logging.DEBUG,
+}
+
+
+def log_level( adjust ):
+    """Return a logging level corresponding to the +'ve/-'ve adjustment"""
+    return log_levelmap[
+        max(
+            min(
+                adjust,
+                max( log_levelmap.keys() )
+            ),
+            min( log_levelmap.keys() )
+        )
+    ]
+
 
 #
 # Python2/3 Compatibility Types

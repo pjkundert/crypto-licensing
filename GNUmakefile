@@ -10,7 +10,7 @@ VERSION=$(shell $(PY3) -c 'exec(open("crypto_licensing/version.py").read()); pri
 TZ		?= Canada/Mountain
 
 # To see all pytest output, uncomment --capture=no
-PYTESTOPTS	= -vv  --capture=no --log-cli-level=DEBUG
+PYTESTOPTS	= -vv # --capture=no --log-cli-level=DEBUG
 
 PY3TEST		= TZ=$(TZ) $(PY3) -m pytest $(PYTESTOPTS)
 PY2TEST		= TZ=$(TZ) $(PY2) -m pytest $(PYTESTOPTS)
@@ -49,27 +49,33 @@ pylint:
 	cd .. && pylint crypto_licensing --disable=W,C,R
 
 
-build-check:
+build3-check:
 	@$(PY3) -m build --version \
 	    || ( echo "\n*** Missing Python modules; run:\n\n        $(PY3) -m pip install --upgrade pip setuptools build\n" \
 	        && false )
 
-build:	build-check clean
+build3:	build3-check clean
 	$(PY3) -m build
 	@ls -last dist
+build: build3
 
-dist/crypto_licensing-$(VERSION)-py3-none-any.whl: build
+dist/crypto_licensing-$(VERSION)-py3-none-any.whl: build3
 
-install:	dist/crypto_licensing-$(VERSION)-py3-none-any.whl
+install2:
+	$(PY2) setup.py install
+install3:	dist/crypto_licensing-$(VERSION)-py3-none-any.whl
 	$(PY3) -m pip install --force-reinstall $^
+
+install23: install2 install3
+install: install3
 
 
 # Support uploading a new version of slip32 to pypi.  Must:
 #   o advance __version__ number in slip32/version.py
 #   o log in to your pypi account (ie. for package maintainer only)
 
-upload: build
-	python3 -m twine upload --repository pypi dist/*
+upload: build3
+	$(PY3) -m twine upload --repository pypi dist/*
 
 clean:
 	@rm -rf MANIFEST *.png build dist auto *.egg-info $(shell find . -name '*.pyc' -o -name '__pycache__' )

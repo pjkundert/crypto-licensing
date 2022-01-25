@@ -7,7 +7,7 @@ import fnmatch
 
 HERE				= os.path.dirname( os.path.abspath( __file__ ))
 
-def find_data_files( directory, *pats, skip="*~" ):
+def find_data_files( directory, *pats, **kwds ):
     """Using glob patterns in ``package_data`` that matches a directory can result in setuptools trying
     to install that directory as a file and the installation to fail.
 
@@ -15,6 +15,8 @@ def find_data_files( directory, *pats, skip="*~" ):
     a list of only filenames found -- relative to *directory*.
 
     """
+    kwds.setdefault( 'skip', "*~" )
+    assert set( kwds ) == { 'skip' }
 
     def walk( path ):
         for root, dirs, files in os.walk( path ):
@@ -26,7 +28,7 @@ def find_data_files( directory, *pats, skip="*~" ):
     for pat in pats:
         for path in glob.glob( os.path.join( strip, pat )):
             for filename in walk( path ) if os.path.isdir( path ) else [ path ]:
-                if not fnmatch.fnmatch( filename, skip ):
+                if not fnmatch.fnmatch( filename, kwds['skip'] ):
                     result.append( os.path.relpath( filename, strip ))
 
     return result

@@ -82,10 +82,12 @@ session_initializer		= {
 }
 
 
-from ...history.times	import timestamp, duration
-from ...misc		import timer
-from ...automata	import log_cfg, type_str_base
-from ...server.enip.defaults import config_paths, config_open, ConfigNotFoundError
+from ..misc		import (
+    timer, Timestamp, Duration,
+    type_str_base,    
+    log_cfg, log_levelmap, log_level,
+    config_paths, config_open, ConfigNotFoundError
+)
 from ..			import licensing
 
 log				= logging.getLogger( "licensing" )
@@ -154,10 +156,10 @@ def db_setup():
                 sql		= f.read()
                 sql_file	= f.name
             try:
-                log.detail( "Loading SQL from {}".format( sql_file ))
+                log.info( "Loading SQL from {}".format( sql_file ))
                 init_db.executescript( sql )
             except (sqlite3.OperationalError,sqlite3.IntegrityError) as exc:
-                log.detail( "Failed to load %s (probably already configured, continuing): %s", sql_file, exc )
+                log.info( "Failed to load %s (probably already configured, continuing): %s", sql_file, exc )
     except Exception as exc:
         log.warning( "Failed to execute {}* scripts into DB {}: {}".format(
             sqlfile_path, db_file_path, exc ))
@@ -296,7 +298,7 @@ def credentials( *add ):
             if isinstance( creds, dict ):
                 creds		= creds.items()
             for name, (username, password) in creds:
-                log.detail( "  {n:<20}: {u:>20} / {p}".format( n=name, u=username, p='*' * len( password )))
+                log.info( "  {n:<20}: {u:>20} / {p}".format( n=name, u=username, p='*' * len( password )))
                 yield name, (username, password)
                 found	       += 1
     except Exception as exc:
@@ -416,7 +418,7 @@ def credentials_data( path ):
 
     for name,(username,password) in credentials():
         if pathsegs and pathsegs[0] and not fnmatch.fnmatch( name, pathsegs[0] ):
-            log.detail( "Credential {} didn't match {}".format( name, path ))
+            log.info( "Credential {} didn't match {}".format( name, path ))
             continue
         record			= dict(
             name	= name,
@@ -443,11 +445,11 @@ def keypairs_data( path ):
     creds			= dict( credentials() )
     creds_reverse		= { v: k for k,v in creds.items() }
 
-    log.detail( "Keypairs data w/ {} credential:".format( len( creds_reverse )))
+    log.info( "Keypairs data w/ {} credential:".format( len( creds_reverse )))
     for name,keypair,cred in keypairs():
         log.info("Found keypair: {!r}".format( (name,keypair,cred) ))
         if pathsegs and pathsegs[0] and not fnmatch.fnmatch( name, pathsegs[0] ):
-            log.detail( "Credential {} didn't match {}".format( name, path ))
+            log.info( "Credential {} didn't match {}".format( name, path ))
             continue
         record			= dict(
             name	= name,
@@ -469,13 +471,6 @@ shutdown_signalled		= False
 logrotate_signalled		= False
 levelmap_change			= 0 # may become +'ve/-'ve
 
-logging_levelmap		= {
-    0: logging.WARNING,
-    1: logging.NORMAL,
-    2: logging.DETAIL,
-    3: logging.INFO,
-    4: logging.DEBUG,
-}
 
 def uptime_request( signum, frame ):
     global uptime_signalled
@@ -498,7 +493,7 @@ def logleveldn_request( signum, frame ):
     levelmap_change	       -= 1
 
 def signal_service():
-    """Service known signals.  When logging, default to logat NORMAL, but ensure the
+    """Service known signals.  When logging, default to log at WARNING, but ensure the
     message is seen if higher (eg. WARNING).  Support being in unknown logging
     levels when in/decreasing.
 
@@ -507,13 +502,13 @@ def signal_service():
     if levelmap_change:
         rootlog			= logging.getLogger()
         actual			= rootlog.getEffectiveLevel()
-        closest			= min( logging_levelmap.values(), key=lambda x:abs(x-actual) )
-        highest			= max( logging_levelmap.keys() )
-        for i,lvl in logging_levelmap.items():
-            if lvl == closest:
-                key		= i + levelmap_change
-                break
-        desired			= logging_levelmap.get( key, logging.DEBUG if key > highest else logging.ERROR )
+        # Find the current log_levelmap key w/ a level value nearest our current actual level.  Default to 0.
+        key,dif			= 0,1000
+        for k,lvl in log_levelmap.items():
+            if abs( lvl - actual ) < dif:
+                key		= k
+        # Get an available log_level up/down from the currently active one
+        desired			= log_level( key + levelmap_change )
         if actual != desired:
             rootlog.setLevel( desired )
         levelmap_change		= 0
@@ -1028,8 +1023,8 @@ def issue_request( render, path, environ, accept, framework,
             pass
         else:
             if lic.client and lic.machine: # Exact match, with specific client and machine
-                log.normal( "Issue request number={number}; Reissuing existing License: {lic}".format(
-                    number=number, lic=lic if log.isEnabledFor( logging.DETAIL ) else licensing.into_b64( sig )))
+                log.warning( "Issue request number={number}; Reissuing existing License: {lic}".format(
+                    number=number, lic=lic if log.isEnabledFor( logging.INFO ) else licensing.into_b64( sig )))
                 return licensing.LicenseSigned(
                     license=lic, signature=sig, confirm=False, machine_id_path=False )
 
@@ -1045,7 +1040,7 @@ def issue_request( render, path, environ, accept, framework,
             pass
         else:
             if not lic.machine or lic['machine'] == issue_request['machine']:
-                log.detail( "Issue request number={number}; Specializing existing License: {lic}".format(
+                log.info( "Issue request number={number}; Specializing existing License: {lic}".format(
                     number=number, lic=lic if log.isEnabledFor( logging.INFO ) else licensing.into_b64( sig)))
                 author_sigkey	= None
                 for name,keypair,cred in keypairs():
@@ -1064,8 +1059,8 @@ def issue_request( render, path, environ, accept, framework,
                                     signature=prov['signature'],
                                     license=str( prov.license ))
                 assert insert, "Specializing license insert failed"
-                log.normal( "Issue request number={number}; Issued specialized License: {lic}".format(
-                    number=number, lic=prov.license if log.isEnabledFor( logging.DETAIL ) else licensing.into_b64( prov.signature )))
+                log.warning( "Issue request number={number}; Issued specialized License: {lic}".format(
+                    number=number, lic=prov.license if log.isEnabledFor( logging.INFO ) else licensing.into_b64( prov.signature )))
                 return prov
 
         raise http_exception( framework, 409, "No matching Licenses found matching request: {}".format(
@@ -1091,7 +1086,7 @@ def issue_request( render, path, environ, accept, framework,
         license		= prov.license,
     )
     if confirm:
-        log.normal( "Issue request number={number}; Confirming DKIM for {name}' {product}".format(
+        log.warning( "Issue request number={number}; Confirming DKIM for {name}' {product}".format(
             number=number, name=prov.license.author['name'], product=prov.license.author['product'] ))
         try:
             licensing.verify( prov, confirm=confirm, machine_id_path=False )
@@ -1506,7 +1501,7 @@ Disallow: /
             # carry a meaningful HTTP status code.  Otherwise, a generic 500 Server
             # Error will be produced.
             request		= self.__class__.__dict__['request']
-            log.detail( "Tabular API call: {!r}".format( request ))
+            log.info( "Tabular API call: {!r}".format( request ))
             content, response	= request(
                 render=render, path=path, environ=web.ctx.environ,
                 accept=accept, framework=web, logged=logged,
@@ -1576,7 +1571,7 @@ Disallow: /
         def __init__( self, app, prefix="/static/", basedir=os.getcwd() ):
             super( StaticMiddlewareDir, self ).__init__( app, prefix=prefix )
             self.basedir	= basedir
-            logging.detail( "Serving static files out of {}".format( basedir + prefix ))
+            logging.info( "Serving static files out of {}".format( basedir + prefix ))
 
         def __call__( self, environ, start_response ):
             path 		= environ.get( 'PATH_INFO', '' )
@@ -1689,20 +1684,20 @@ Disallow: /
     webpy.server.nodelay	= True
 
     try:
-        log.normal( "Web Interface starting" )
+        log.warning( "Web Interface starting" )
         webpy.server.start()
     except (KeyboardInterrupt, SystemExit) as exc:
         logging.warning( "Web Interface Thread uncontrolled shutdown: %s", exc )
     except Exception as exc:
         logging.warning( "Web Interface Thread exception shutdown: %s", exc )
     finally:
-        logging.detail( "Web Interface Thread stopping..." )
+        logging.info( "Web Interface Thread stopping..." )
         try:
             webpy.server.stop()
         except Exception as exc:
             logging.warning( "Web Interface Thread stop failure: %s", exc )
         webpy.server		= None
-        logging.normal( "Web Interface Thread exiting" )
+        logging.warning( "Web Interface Thread exiting" )
 
 # To stop the server externally, hit webpy.server.stop
 webpy.server			= None
@@ -1758,6 +1753,9 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
     ap.add_argument( '-v', '--verbose', action="count",
                      default=0, 
                      help="Display logging information." )
+    ap.add_argument( '-q', '--quiet', action="count",
+                     default=0,
+                     help="Reduce logging output." )
     ap.add_argument( '-w', '--web', default="0.0.0.0:8000",
                        help='enable web server on interface (default: 0.0.0.0:8000)' )
     ap.add_argument( '--no-web', dest='web', action="store_false",
@@ -1781,12 +1779,15 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
 
     args = ap.parse_args( argv )
 
-    log_cfg['level']		= ( logging_levelmap[args.verbose] 
-                                    if args.verbose in logging_levelmap
-                                    else logging.DEBUG )
+
+    # Set up logging; also, handle the degenerate case where logging has *already* been set up (and
+    # basicConfig is a NO-OP), by (also) setting the logging level.
+    log_cfg['level']		= log_level( args.verbose - args.quiet )
     if args.log or args.gui:
         log_cfg['filename']	= args.log or LOGFILE
     logging.basicConfig( **log_cfg )
+    if args.verbose or args.quiet:
+        logging.getLogger().setLevel( log_cfg['level'] )
 
 
     profiler			= None
@@ -1810,7 +1811,7 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
     # letting it generate random seeds.
     warnings.simplefilter('ignore') # We know about handling Ed25519 random seeds...
 
-    log.detail( "Ed25519 Version: {} / {} / {}".format(
+    log.info( "Ed25519 Version: {} / {} / {}".format(
         getattr( licensing.ed25519, '__version__', None ), licensing.ed25519.__package__, licensing.ed25519.__path__ ))
 
     # Set up the global db, etc.
@@ -1820,7 +1821,7 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
     stored			= db.select( 'licenses' )
     stored			= list( stored )
     for sig, lic in licenses( confirm=False, stored=stored ):
-        log.detail( "{s:<64}: {lic}".format(
+        log.info( "{s:<64}: {lic}".format(
             s=licensing.into_b64( sig ), lic=str( lic ) ))
 
     for name, keypair, (username, password) in keypairs():
@@ -1828,7 +1829,7 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
             vk			= licensing.into_b64( keypair.into_keypair( username=username, password=password ).vk )
         except Exception as exc:
             vk			= str( exc )
-        log.detail( "{n:<20}: {vk} w/ {u:>20} / {p}".format(
+        log.info( "{n:<20}: {vk} w/ {u:>20} / {p}".format(
             n=name, vk=vk, u=username, p='*' * len( password )))
 
     class daemon( threading.Thread ):
@@ -1840,14 +1841,14 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
             self.config.setdefault( 'control', {} ).setdefault( 'done', False )
 
         def stop( self ):
-            logging.detail( "Stopping %s Thread", self.name )
+            logging.info( "Stopping %s Thread", self.name )
             self.config['control']['done'] = True
 
         def join( self, *args, **kwds ):
             self.stop()
             logging.info( "Joining %s Thread...", self.name )
             super( daemon, self ).join( *args, **kwds )
-            logging.detail( "Joined %s Thread", self.name )
+            logging.info( "Joined %s Thread", self.name )
 
     class txtthread( daemon ):
         def run( self ):
@@ -1859,7 +1860,7 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
             except Exception as exc:
                 logging.error("Text GUI failed: %s\n%s", exc, traceback.format_exc())
             finally:
-                logging.normal( "Text GUI exiting" )
+                logging.warning( "Text GUI exiting" )
                 self.stop()
 
     class webthread( daemon ):
@@ -1870,7 +1871,7 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
                 logging.error( "Web GUI failed: %s\n%s", exc, traceback.format_exc() )
             finally:
                 self.stop()
-                logging.normal( "Web GUI exiting" )
+                logging.warning( "Web GUI exiting" )
 
         def stop( self ):
             """In addition to the normal stop procedure (perhaps signaling other Threads via a shared
@@ -1879,9 +1880,9 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
             """
             super( webthread, self ).stop()
             if webpy.server:
-                logging.detail( "Web GUI stopping..." )
+                logging.info( "Web GUI stopping..." )
                 webpy.server.stop()
-                logging.detail( "Web GUI stopped" )
+                logging.info( "Web GUI stopped" )
 
     class ctlthread( daemon ):
         def run( self ):
@@ -1896,7 +1897,7 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
             except Exception as exc:
                 logging.error( "Control system failed: %s\n%s", exc, traceback.format_exc() )
             finally:
-                logging.normal( "Control system exiting" )
+                logging.warning( "Control system exiting" )
                 self.stop()
 
     # Some of these threads may need to redirect sys.stdout/stderr; save and restore
@@ -1960,12 +1961,12 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
     finally:
         # Either the Web or the Curses GUI completed, or something blew up.  Shut all the
         # threads down, restore sys.stdout/stderr and save state.
-        logging.normal( "Cleaning up threads" )
+        logging.warning( "Cleaning up threads" )
         for t in threads:
             t.join( timeout=1.0 )
         sys.stdout, sys.stderr	= sys_stream_save
 
-        logging.detail( "Saving state..." )
+        logging.info( "Saving state..." )
         db_state_save()
 
         if args.profile:
