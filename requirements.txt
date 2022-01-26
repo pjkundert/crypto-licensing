@@ -1,3 +1,4 @@
+dnspython
 pytz
 tzlocal
 web.py>=0.51
