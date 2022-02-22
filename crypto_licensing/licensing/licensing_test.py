@@ -25,12 +25,12 @@ from ..			import licensing
 # If web.py or cpppo is unavailable, licensing.main cannot be used
 try:
     from .main import main as licensing_main
-except:
+except ImportError:
     licensing_main		= None
 
 try:
     import web
-except:
+except ImportError:
     web				= None
 try:
     from cpppo.server import network		# network.bench
@@ -39,7 +39,7 @@ except ImportError:
     network			= None
 try:
     import chacha20poly1305
-except:
+except ImportError:
     chacha20poly1305		= None
     
 
@@ -132,7 +132,7 @@ def licensing_bench():
             # them to share it).  If *any* thread shuts down, they will all be stopped.
             server	= dict(
                 control		= m.apidict(
-                    1.0,
+                    1.0, # apidict timeout
                     done	= False
                 ),
             ),

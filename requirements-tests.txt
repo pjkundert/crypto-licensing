@@ -1,2 +1,2 @@
 pytest>=4.6
-cpppo
+cpppo>=5.0
