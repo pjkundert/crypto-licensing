@@ -3,14 +3,14 @@
 #
 # Crypto-licensing -- Cryptographically signed licensing, w/ Cryptocurrency payments
 #
-# Copyright (c) 2022, Hard Consulting Corporation.
+# Copyright (c) 2022, Dominion Research & Development Corp.
 #
-# Cpppo is free software: you can redistribute it and/or modify it under the
-# terms of the GNU General Public License as published by the Free Software
-# Foundation, either version 3 of the License, or (at your option) any later
-# version.  See the LICENSE file at the top of the source tree.
+# Crypto-licensing is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation, either version 3 of the License, or (at your option) any
+# later version.  See the LICENSE file at the top of the source tree.
 #
-# Cpppo is distributed in the hope that it will be useful, but WITHOUT ANY
+# It is distributed in the hope that it will be useful, but WITHOUT ANY
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 #
