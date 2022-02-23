@@ -1,0 +1,7 @@
+build
+flake8
+pip
+pytest
+setuptools
+wheel
+pyinstaller	>= 4.9

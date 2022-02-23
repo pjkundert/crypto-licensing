@@ -51,6 +51,12 @@ entry_points			= {
 
 install_requires		= open( os.path.join( HERE, "requirements.txt" )).readlines()
 tests_require			= open( os.path.join( HERE, "requirements-tests.txt" )).readlines()
+extras_require			= {
+    option: open( os.path.join( HERE, "requirements-{}.txt".format( option ))).readlines()
+    for option in [
+        'dev',		# crypto_licensing[dev]:    All modules to support development
+    ]
+}
 
 package_dir			= {
     "crypto_licensing":			"./crypto_licensing",
@@ -100,6 +106,7 @@ setup(
     name			= "crypto_licensing",
     version			= __version__,
     tests_require		= tests_require,
+    extras_require		= extras_require,
     install_requires		= install_requires,
     packages			= package_dir.keys(),
     package_dir			= package_dir,

@@ -32,8 +32,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install wheel
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        python -m pip install git+https://github.com/pjkundert/cpppo.git@feature-pro#egg=cpppo
         if [ -f requirements-tests.txt ]; then pip install -r requirements-tests.txt; fi
-        pip install flake8 ed25519ll
+        pip install ed25519ll
     - name: Lint with flake8
       run: |
         make analyze || true
