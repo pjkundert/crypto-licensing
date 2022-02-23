@@ -105,7 +105,7 @@ def licensing_cli( number, tests=None, address=None ):
         number	= number,
     )
     log.detail( "Client number={}; url: {}".format( number, reprlib.repr( url )))
-    response			= urlopen( url ).read()
+    response			= urlopen( url ).read().decode('utf-8')
     assert response
     log.detail( "Client number={}; response: {}".format( number, reprlib.repr( response )))
     data			= json.loads( response )
