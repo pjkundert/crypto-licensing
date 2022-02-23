@@ -43,16 +43,10 @@ __license__                     = "Dual License: GPLv3 (or later) and Commercial
 
 log				= logging.getLogger( "licensing" )
 
-# Get Ed25519 support. Try a globally installed ed25519ll possibly with a CTypes binding
-try:
-    import ed25519ll as ed25519
-except ImportError:
-    # Otherwise, try our local Python-only ed25519ll derivation
-    try:
-        from .. import ed25519ll as ed25519
-    except ImportError:
-        # Fall back to the very slow D.J.Bernstein Python reference implementation
-        from .. import ed25519
+# Get Ed25519 support. Try a globally installed ed25519ll possibly with a CTypes binding, Otherwise,
+# try our local Python-only ed25519ll derivation, or fall back to the very slow D.J.Bernstein Python
+# reference implementation
+from .. import ed25519
 
 # Optionally, we can provide ChaCha20Poly1305 to support KeypairEncrypted
 try:
@@ -300,14 +294,14 @@ def machine_UUIDv4( machine_id_path=None):
 
 
 def domainkey( product, domain, service=None, pubkey=None ):
-    """Compute and return the DNS path for the given product and domain.  Optionally, also returns the
+    """Compute and return the DNS path for the given product and domain.  Optionally, returns the
     appropriate DKIM TXT RR record containing the agent's public key (base-64 encoded), as per the
     RFC: https://www.rfc-editor.org/rfc/rfc6376.html
 
         >>> from .verification import author, domainkey
         >>> path, dkim_rr = domainkey( "Some Product", "example.com" )
         >>> path
-        'some-product.cpppo-licensing._domainkey.example.com.'
+        'some-product.crypto-licensing._domainkey.example.com.'
         >>> dkim_rr
 
     
@@ -315,7 +309,7 @@ def domainkey( product, domain, service=None, pubkey=None ):
         >>> keypair = author( seed=b'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' )
         >>> path, dkim_rr = domainkey( "Something Awesome v1.0", "awesome-inc.com", pubkey=keypair )
         >>> path
-        'something-awesome-v1-0.cpppo-licensing._domainkey.awesome-inc.com.'
+        'something-awesome-v1-0.crypto-licensing._domainkey.awesome-inc.com.'
         >>> dkim_rr
         'v=DKIM1; k=ed25519; p=25lf4lFp0UHKubu6krqgH58uHs599MsqwFGQ83/MH50='
 
@@ -325,7 +319,7 @@ def domainkey( product, domain, service=None, pubkey=None ):
     assert service, \
         "A service is required to deduce the DKIM DNS path"
     domain_name			= dns.name.from_text( domain )
-    service_name		= dns.name.Name( [service, 'cpppo-licensing', '_domainkey'] )
+    service_name		= dns.name.Name( [service, 'crypto-licensing', '_domainkey'] )
     path_name			= service_name + domain_name
     path			= path_name.to_text()
 
@@ -419,8 +413,10 @@ class Serializable( object ):
         return stream
 
     def sign( self, sigkey, pubkey=None ):
-        """Sign our default serialization, and (optionally) confirm that the supplied public key (which will
-        be used to check the signature) is correct, by re-deriving the public key.
+        """
+
+        Sign our default serialization, and (optionally) confirm that the supplied public key (which
+        will be used to check the signature) is correct, by re-deriving the public key.
 
         """
         vk, sk			= into_keys( sigkey )
@@ -449,9 +445,9 @@ class Serializable( object ):
         return ed25519.crypto_sign_open( signature + self.serialize(), pubkey )
 
     def digest( self, encoding=None, decoding=None ):
-        """The SHA-256 hash of the serialization, as 32 bytes.  Optionally, encode w/ a named codec, eg
-        "hex" or "base64".  Often, these will require a subsequent .decode( 'ASCII' ) to become a
-        non-binary str.
+        """The SHA-256 hash of the serialization, as 32 bytes.  Optionally, encode w/ a named codec,
+        eg.  "hex" or "base64".  Often, these will require a subsequent .decode( 'ASCII' ) to become
+        a non-binary str.
 
         """
         binary			= hashlib.sha256( self.serialize() ).digest()
@@ -581,8 +577,8 @@ class Agent( Serializable ):
             self.pubkey	= self.pubkey_query()
 
     def pubkey_query( self ):
-        """Obtain the agent's public key.  This was either provided at License construction time, or can be
-        obtained from a DNS TXT "DKIM" record.
+        """Obtain the agent's public key.  This was either provided at License construction time, or
+        can be obtained from a DNS TXT "DKIM" record.
         
         TODO: Cache
 
@@ -598,6 +594,7 @@ class Agent( Serializable ):
 
             >>> ast.literal_eval('"abc" "123"')
             'abc123'
+
         """
         dkim_path, _dkim_rr	= domainkey( self.product, self.domain, service=self.service )
         log.debug("Querying {domain} for DKIM service {service}: {dkim_path}".format(
@@ -650,24 +647,24 @@ class License( Serializable ):
     A signed license is a claim by an Author that the License is valid; it is up to a recipient to
     check that the License also actually satisfies the constraints of any License dependencies.  A
     nefarious Author could create a License and properly sign it -- but not satisfy the License
-    constraints.  License.verify(confirm=True) will do do this, as well as (optionally) retrieve and
+    constraints.  License.verify(confirm=True) will do this, as well as (optionally) retrieve and
     verify from DNS the public keys of the (claimed) signed License dependencies.
 
     Checking your License
     ---------------------
 
-    Each module that uses cpppo.crypto.licensing checks that the final product's License or contains
-    valid license(s) for itself, somewhere within the License dependencies tree.
+    Each module that uses crypto_licensing.licensing checks that the final product's License or its
+    parents contains valid license(s) for itself, somewhere within the License dependencies tree.
 
     All start times are expressed in the UTC timezone; if we used the local timezone (as computed
     using get_localzone, wrapped to respect any TZ environment variable, and made available as
     timestamp.LOC), then serializations (and hence signatures and signature tests) would be
     inconsistent.
 
-    Licenses are signed by the author using their signing key.  The corresponding public key is
-    expected to be found in a DKIM entry, eg.:
+    Licenses for products are signed by the author using their signing key.  The corresponding
+    public key is expected to be found in a DKIM entry; eg. for Dominion's Cpppo product:
 
-        cpppo.licensing._domainkey.dominionrnd.com 300 IN TXT "v=DKIM1; k=ed25519; p=ICkF+6tTRKc8voK15Th4eTXMX3inp5jZwZSu4CH2FIc="
+        cpppo.crypto-licensing._domainkey.dominionrnd.com 300 IN TXT "v=DKIM1; k=ed25519; p=ICkF+6tTRKc8voK15Th4eTXMX3inp5jZwZSu4CH2FIc="
 
 
     Licenses may carry optional constraints, with functions to validate their values.  These may be
@@ -713,13 +710,17 @@ class License( Serializable ):
         machine		= into_str,
     )
 
-    def __init__( self, author, client=None,
-                  dependencies=None,			# Any sub-Licenses
-                  start=None, length=None,		# License may not be perpetual
-                  machine=None,				# A specific host may be specified
-                  machine_id_path=None,
-                  confirm=None,				# Validate License dependencies' author_pubkey from DNS
-                 ):
+    def __init__(
+        self,
+        author,
+        client		= None,
+        dependencies	= None,				# Any sub-Licenses
+        start		= None,
+        length		= None,				# License may not be perpetual
+        machine		= None,				# A specific host may be specified
+        machine_id_path	= None,
+        confirm		= None,				# Validate License' author_pubkey from DNS
+    ):
         if isinstance( author, type_str_base ):
             author		= json.loads( author )	# Deserialize Agent, if necessary
         self.author	= Agent( **author )
@@ -773,8 +774,14 @@ class License( Serializable ):
                     ))
         return start, length
 
-    def verify( self, author_pubkey=None, signature=None, confirm=None, machine_id_path=None,
-                **constraints ):
+    def verify(
+        self,
+        author_pubkey	= None,
+        signature	= None,
+        confirm		= None,
+        machine_id_path	= None,
+        **constraints
+    ):
         """Verify that the License is valid:
 
             - Has properly signed License dependencies
@@ -811,8 +818,8 @@ class License( Serializable ):
                         found	= into_b64( avkey ),
                         claim	= into_b64( self.author.pubkey ),
                     ))
-        # Verify that the License signature was indeed produced by the signing key corresponding to the
-        # provided public key
+        # Verify that the License signature was indeed produced by the signing key corresponding to
+        # the provided public key
         if signature:
             try:
                 super( License, self ).verify( pubkey=self.author.pubkey, signature=signature )
@@ -944,10 +951,11 @@ class LicenseSigned( Serializable ):
     author's public key) proves that a License was actually issued by the purported author.  It is
     expected that authors will only sign a valid License.
 
-    The public key of the author must be confirmed through independent means.  One typical means is by
-    checking publication on the author's domain (the default behaviour w/ confirm=None), eg.:
+    The public key of the author must be confirmed through independent means.  One typical means is
+    by checking publication on the author's domain (the default behaviour w/ confirm=None), eg.:
 
-        awesome-tool.cpppo-licensing._domainkey.awesome-inc.com 86400 IN TXT "v=DKIM1; k=ed25519; p=PW847sz.../M+/GZc="
+        awesome-tool.crypto-licensing._domainkey.awesome-inc.com 86400 IN TXT \
+            "v=DKIM1; k=ed25519; p=PW847sz.../M+/GZc="
 
 
     Authoring a License
@@ -956,7 +964,7 @@ class LicenseSigned( Serializable ):
     A software issuer (or end-user, in the case of machine-specific or numerically limited Licenses)
     must create new Licenses.
     
-        >>> from cpppo.crypto.licensing import author, issue, verify
+        >>> from crypto_licensing import author, issue, verify
     
     First, create a Keypair, including both signing (private, .sk) and verifying (public, .vk) keys:
 
@@ -999,9 +1007,18 @@ class LicenseSigned( Serializable ):
 
         import json
         # Locate, open, read 
-        #with config_open( "application.cpppo-licencing", 'r' ) as provenance_file:
-        #    provenance_ser = provenance_file.read()
+        #with config_open( "application.crypto-licencing", 'r' ) as provenance_file:
+        #    provenance_ser	= provenance_file.read()
         >>> provenance_dict = json.loads( provenance_ser )
+
+    Or use the crypto_licensing.load() API to get them all into a dict, with
+    the license file basename deduced from your __package__ or __file__ name:
+
+        import crypto_licensing as cl
+        licenses		= dict( cl.load( 
+            filename	= __file__,
+            confirm	= False, # don't check signing key validity via DKIM
+        ))
 
     Validating Licenses
     -------------------
@@ -1045,7 +1062,7 @@ class LicenseSigned( Serializable ):
 
             LicenseSigned( <License>, <Keypair> )
 
-        To reconstruct from a dict (eg. recovered from a .cpppo-license file):
+        To reconstruct from a dict (eg. recovered from a .crypto-licensing file):
 
             LicenseSigned( **provenance_dict )
 
@@ -1062,7 +1079,8 @@ class LicenseSigned( Serializable ):
             "Require either signature, or the means to produce one via the author's signing key"
         if author_sigkey and not signature:
             # Sign our default serialization, also confirming that the public key matches
-            self.signature	= self.license.sign( sigkey=author_sigkey, pubkey=self.license.author.pubkey )
+            self.signature	= self.license.sign(
+                sigkey=author_sigkey, pubkey=self.license.author.pubkey )
         elif signature:
             # Could be a hex-encoded signature on deserialization, or a 64-byte signature.  If both
             # signature and author_sigkey, we'll just be confirming the supplied signature, below.
@@ -1159,7 +1177,7 @@ class KeypairEncrypted( Serializable ):
         if salt:
             self.salt		= into_bytes( salt, ('hex',) )
         else:
-            # If salt not supplied, supply one -- but we obviously cannot be given an encrypted seed!
+            # If salt not supplied, supply one -- but we obviously can't be given an encrypted seed!
             assert vk and not ciphertext, \
                 "Expected unencrypted keypair if no is salt provided"
             self.salt		= os.urandom( 12 )
@@ -1175,8 +1193,9 @@ class KeypairEncrypted( Serializable ):
             keypair		= None
         else:
             # We are provided with the unencrypted signing key.  We must encrypt the 256-bit private
-            # key material to produce the seed ciphertext.  Remember, the Ed25519 private signing key always
-            # includes the 256-bit public key appended to the raw 256-bit private key material.
+            # key material to produce the seed ciphertext.  Remember, the Ed25519 private signing
+            # key always includes the 256-bit public key appended to the raw 256-bit private key
+            # material.
             sk			= into_bytes( sk, ('base64',) )
             seed		= sk[:32]
             keypair		= author( seed=seed, why="provided unencrypted signing key" )
@@ -1226,7 +1245,9 @@ class KeypairEncrypted( Serializable ):
         return keypair
 
 
-def author( seed=None, why=None ):
+def author(
+    seed	= None,
+    why		= None ):
     """Prepare to author Licenses, by creating an Ed25519 keypair."""
     keypair			= ed25519.crypto_sign_keypair( seed )
     log.info( "Created Ed25519 signing keypair  w/ Public key: {vk_b64}{why}".format(
@@ -1234,8 +1255,13 @@ def author( seed=None, why=None ):
     return keypair
 
 
-def issue( license, author_sigkey, signature=None, confirm=None, machine_id_path=None ):
-    """If possible, issue the license signed with the supplied signing key.  Ensures that the license
+def issue(
+    license,
+    author_sigkey,
+    signature	= None,
+    confirm	= None,
+    machine_id_path = None ):
+    """If possible, issue the license signed with the supplied signing key. Ensures that the license
     is allowed to be issued, by verifying the signatures of the tree of dependent license(s) if any.
 
     The holder of an author secret key can issue any license they wish (so long as it is compatible
@@ -1261,8 +1287,13 @@ def issue( license, author_sigkey, signature=None, confirm=None, machine_id_path
         machine_id_path	= machine_id_path )
 
 
-def verify( provenance, author_pubkey=None, signature=None, confirm=None, machine_id_path=None,
-            **constraints ):
+def verify(
+    provenance,
+    author_pubkey = None,
+    signature	= None,
+    confirm	= None,
+    machine_id_path = None,
+    **constraints ):
     """Verify that the supplied License or LicenseSigned contains a valid signature, and that the
     License follows the rules in all of its License dependencies.  Optionally, confirm the validity
     of any public keys.
@@ -1283,13 +1314,19 @@ def verify( provenance, author_pubkey=None, signature=None, confirm=None, machin
         **constraints )
 
     
-def load( basename=None, mode=None, extension=None, confirm=None,
-          filename=None, package=None,
-          skip="*~", **kwds ): # eg. extra=["..."], reverse=False, other open() args; see config_open
-    """Open and load all Cpppo Licensing file(s) found on the config path(s) (and any extra=[...,...]
-    paths) containing a LicenseSigned provenance record.  By default, use the provided package's
-    (your __package__) name, or the executable filename's (your __file__) basename.  Appends
-    .cpppo-licensing, if no suffix provided.
+def load(
+    basename	= None,
+    mode	= None,
+    extension	= None,
+    confirm	= None,
+    filename	= None,
+    package	= None,
+    skip	= "*~",
+    **kwds ): # eg. extra=["..."], reverse=False, other open() args; see config_open
+    """Open and load all crypto-licens{e,ing} file(s) found on the config path(s) (and any
+    extra=[...,...]  paths) containing a LicenseSigned provenance record.  By default, use the
+    provided package's (your __package__) name, or the executable filename's (your __file__)
+    basename.  Appends .crypto-licensing, if no suffix provided.
 
     Applies glob pattern matching via config_open....
 
@@ -1298,7 +1335,8 @@ def load( basename=None, mode=None, extension=None, confirm=None,
 
     """
     name		= deduce_name(
-        basename=basename, extension=extension or 'cpppo-license*', filename=filename, package=package )
+        basename=basename, extension=extension or 'crypto-licens*',
+        filename=filename, package=package )
     for f in config_open( name=name, mode=mode, skip=skip, **kwds ):
         with f:
             prov_ser		= f.read()
@@ -1307,13 +1345,21 @@ def load( basename=None, mode=None, extension=None, confirm=None,
         yield prov_name, LicenseSigned( confirm=confirm, **prov_dict )
     
 
-def load_keys( basename=None, mode=None, extension=None,
-               filename=None, package=None,		# For deduction of basename
-               username=None, password=None,		# Decryption credentials to use
-               every=False, detail=True,		# Yield every file? w/ origin + credentials info?
-               skip="*~", **kwds ): # eg. extra=["..."], reverse=False, other open() args; see config_open               **kwds ):
+def load_keys(
+    basename	= None,
+    mode	= None,
+    extension	= None,
+    filename	= None,
+    package	= None,		# For deduction of basename
+    username	= None,
+    password	= None,		# Decryption credentials to use
+    every	= False,
+    detail	= True,		# Yield every file? w/ origin + credentials info?
+    skip	= "*~",
+    **kwds ): # eg. extra=["..."], reverse=False, other open() args; see config_open
     """Load Ed25519 signing Keypair(s) from glob-matching file(s) with any supplied credentials.
-    Yeilds all Encrypted/Plaintext Keypairs successfully opened (may be none at all), as a sequence of:
+    Yields all Encrypted/Plaintext Keypairs successfully opened (may be none at all), as a sequence
+    of:
 
         <filename>, <Keypair{Encrypted,Plaintext}>, <credentials dict>, <Keypair/Exception>
 
@@ -1372,7 +1418,7 @@ def load_keys( basename=None, mode=None, extension=None,
     issues			= []
     found			= 0
     name		= deduce_name(
-        basename=basename, extension=extension or 'cpppo-keypair*', filename=filename, package=package )
+        basename=basename, extension=extension or 'crypto-keypair*', filename=filename, package=package )
     for f in config_open( name=name, mode=mode, skip=skip, **kwds ):
         try:
             with f:
@@ -1464,8 +1510,8 @@ def check( basename=None, mode=None,		# Keypair/License file basename and open m
     Agent signing authority is usually machine-specific: a License to run a program on one machine
     usually doesn't transfer to another machine.  
 
-    <basename>-<machine-id>.cpppo-keypair...
-    <basename>-<machine-id>.cpppo-license...
+    <basename>-<machine-id>.crypto-keypair...
+    <basename>-<machine-id>.crypto-license...
 
     """
     keypairs		= dict( (name, keypair_or_error)

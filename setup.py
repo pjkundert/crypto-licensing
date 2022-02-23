@@ -54,7 +54,8 @@ tests_require			= open( os.path.join( HERE, "requirements-tests.txt" )).readline
 
 package_dir			= {
     "crypto_licensing":			"./crypto_licensing",
-    "crypto_licensing/ed25519ll":	"./crypto_licensing/ed25519ll",
+    "crypto_licensing/ed25519":		"./crypto_licensing/ed25519",
+    "crypto_licensing/ed25519ll_pyonly":"./crypto_licensing/ed25519ll_pyonly",
     "crypto_licensing/licensing":	"./crypto_licensing/licensing",
 }
 
@@ -66,7 +67,9 @@ package_dir			= {
 #     rm -f licensing.* && python3 -m cpppo.crypto.licensing -vv --config cpppo/crypto/licensing/licensing_test --no-gui
 # 
 package_data			= {
-        'crypto_licensing/licensing': find_data_files( 'crypto_licensing/licensing', 'licensing.sql*', 'licensing_test', 'static' )
+    'crypto_licensing/licensing': find_data_files(
+        'crypto_licensing/licensing', 'licensing.sql*', 'licensing_test', 'static'
+    )
 }
 
 long_description_content_type	= 'text/plain'

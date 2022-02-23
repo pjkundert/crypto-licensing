@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
+
 import binascii
 import codecs
 import copy
 import json
+import logging
 import os
 import pytest
 
@@ -20,10 +22,12 @@ from .verification import (
     into_timestamp, into_duration,
     author, issue, verify, load, load_keys, check,
 )
-from .. import ed25519ll as ed25519
+from .. import ed25519
 
 from ..misc import parse_datetime, parse_seconds, Timestamp, Duration
 
+
+log				= logging.getLogger( "verification_test" )
 
 dominion_sigkey			= binascii.unhexlify(
     '431f3fb4339144cb5bdeb77db3148a5d340269fa3bc0bf2bf598ce0625750fdca991119e30d96539a70cd34983dd00714259f8b60a2163bdb748f3fc0cf036c9' )
@@ -43,11 +47,11 @@ def test_License_domainkey():
     assert domainkey_service( u"π/1" ) ==  'xn---1-lbc'
 
     path, dkim_rr = domainkey( u"Some Product", "example.com" )
-    assert path == 'some-product.cpppo-licensing._domainkey.example.com.'
+    assert path == 'some-product.crypto-licensing._domainkey.example.com.'
     assert dkim_rr is None
     author_keypair = author( seed=b'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' )
     path, dkim_rr = domainkey( u"ᛞᚩᛗᛖᛋ᛫ᚻᛚᛇᛏᚪᚾ᛬", "awesome-inc.com", pubkey=author_keypair )
-    assert path == 'xn--dwec4cn7bwa4a4ci7a1b2lta.cpppo-licensing._domainkey.awesome-inc.com.'
+    assert path == 'xn--dwec4cn7bwa4a4ci7a1b2lta.crypto-licensing._domainkey.awesome-inc.com.'
     assert dkim_rr == 'v=DKIM1; k=ed25519; p=25lf4lFp0UHKubu6krqgH58uHs599MsqwFGQ83/MH50='
 
 
@@ -149,7 +153,7 @@ def test_KeypairEncrypted_load_keys():
     enduser_keypair		= author( seed=enduser_seed, why="from enduser seed" )
     # load just the one encrypted cpppo-keypair (no glob wildcard on extension)
     (keyname,keypair_encrypted,keycred,keypair), = load_keys(
-        extension="cpppo-keypair", username=username, password=password,
+        extension="crypto-keypair", username=username, password=password,
         extra=[os.path.dirname( __file__ )], filename=__file__ )
     assert keycred == dict( username=username, password=password )
     assert enduser_keypair == keypair_encrypted.into_keypair( **keycred ) == keypair
@@ -158,21 +162,22 @@ def test_KeypairEncrypted_load_keys():
 def test_KeypairPlaintext_load_keys():
     enduser_keypair		= author( seed=enduser_seed, why="from enduser seed" )
     (keyname,keypair_plaintext,keycred,keypair), = load_keys(
-        extension="cpppo-keypair-plaintext",
+        extension="crypto-keypair-plaintext",
         extra=[os.path.dirname( __file__ )], filename=__file__ )
     assert keycred == {}
     assert enduser_keypair == keypair_plaintext.into_keypair( **keycred ) == keypair
 
 
 def test_License_serialization():
-    # Deduce the basename from our __file__ (note: this is destructuring a 1-element sequence from a
+    # Dedduce the basename from our __file__ (note: this is destructuring a 1-element sequence from a
     # generator!)
     (provname,prov), = load( extra=[os.path.dirname( __file__ )], filename=__file__, confirm=False )
-    with open( os.path.join( os.path.dirname( __file__ ), "verification_test.cpppo-license" )) as f:
+    with open( os.path.join( os.path.dirname( __file__ ), "verification_test.crypto-license" )) as f:
         assert str( prov ) == f.read()
 
 
-def test_License():
+def test_License_base():
+    confirm		= True
     try:
         lic = License(
             author	= dict(
@@ -182,16 +187,20 @@ def test_License():
             ),
             start	= "2021-09-30 11:22:33 Canada/Mountain",
             length	= "1y" )
-    except DNSException:
+    except DNSException as exc:
+        # No DNS; OK, let the test pass anyway.
+        log.warning( "No DNS; disabling crypto-licensing DKIM confirmation for test: {}".format( exc ))
+        confirm		= False
         lic = License(
             author	= dict(
-                domain = "dominionrnd.com",
+                domain	= "dominionrnd.com",
                 name	= "Dominion Research & Development Corp.",
                 product	= "Cpppo Test",
-                pubkey = dominion_sigkey[32:],
+                pubkey	= dominion_sigkey[32:],
             ),
             start	= "2021-09-30 11:22:33 Canada/Mountain",
-            length	= "1y" )
+            length	= "1y",
+            confirm	= confirm )
 
     lic_str = str( lic )
     assert lic_str == """\
@@ -216,7 +225,7 @@ def test_License():
     assert keypair.sk == dominion_sigkey
     assert b'\xa9\x91\x11\x9e0\xd9e9\xa7\x0c\xd3I\x83\xdd\x00qBY\xf8\xb6\n!c\xbd\xb7H\xf3\xfc\x0c\xf06\xc9' == lic.author.pubkey
     assert codecs.getencoder( 'base64' )( keypair.vk ) == (b'qZERnjDZZTmnDNNJg90AcUJZ+LYKIWO9t0jz/AzwNsk=\n', 32)
-    prov = LicenseSigned( lic, keypair.sk )
+    prov = LicenseSigned( lic, keypair.sk, confirm=confirm )
 
     machine_uuid = machine_UUIDv4( machine_id_path=machine_id_path )
     assert machine_uuid.hex == "000102030405460788090a0b0c0d0e0f"
@@ -237,8 +246,8 @@ def test_License():
     },
     "signature":"V+VI/JXX/ZuypAo2nJHKme4VFjhJpWRzQbUFV9NMqIaLHiQYltQgfoLmQD11zcw+oxemnEPrZg+UJm4rJwiICg=="
 }"""
-    # Multiple licenses, some which truncate the duration of the initial License. Non-timezone
-    # timestamps are assumed to be UTC.
+    # Multiple licenses, some of which truncate the duration of the initial License. Non-timezone
+    # timestamps are assumed to be UTC.  These are fake domains, so no confirm.
     start, length = lic.overlap(
         License( author = dict( name="A", product='a', domain='a-inc.com', pubkey=keypair.vk ), confirm=False,
                  start = "2021-09-29 00:00:00", length = "1w" ),
@@ -268,6 +277,7 @@ def test_LicenseSigned():
     print("Awesome, Inc. ed25519 keypair; Signing: {sk}".format( sk=binascii.hexlify( awesome_keypair.sk )))
     print("Awesome, Inc. ed25519 keypair; Public:  {pk_hex} == {pk}".format( pk_hex=into_hex( awesome_keypair.vk ), pk=into_b64( awesome_keypair.vk )))
 
+    confirm			= True
     try:
         # If we're connected to the Internet and can check DNS, lets try to confirm that DKIM public
         # key checking works properly.  First, lets try to create a License with the *wrong* public
@@ -298,12 +308,14 @@ def test_LicenseSigned():
             ),
             client	= dict(
                 name	= "Awesome, Inc.",
-                pubkey = awesome_pubkey,
+                pubkey	= awesome_pubkey,
             ),
             start	= "2021-09-30 11:22:33 Canada/Mountain",
             length	= "1y" )
-    except DNSException:
+    except DNSException as exc:
         # No DNS; OK, let the test pass anyway.
+        log.warning( "No DNS; disabling crypto-licensing DKIM confirmation for test: {}".format( exc ))
+        confirm		= False
         lic = License(
             author	= dict(
                 name	= "Dominion Research & Development Corp.",
@@ -313,17 +325,20 @@ def test_LicenseSigned():
             ),
             client	= dict(
                 name	= "Awesome, Inc.",
-                pubkey = awesome_pubkey,
+                pubkey	= awesome_pubkey,
             ),
             start	= "2021-09-30 11:22:33 Canada/Mountain",
-            length	= "1y" )
+            length	= "1y",
+            confirm	= confirm )
     # Obtain a signed Cpppo license for 2021-09-30 + 1y
-    lic_prov = issue( lic, dominion_sigkey )
+    lic_prov = issue( lic, dominion_sigkey, confirm=confirm )
 
     # Create a signing key for Awesome, Inc.; securely hide it (or, print it for everyone to see,
     # just below! ;), and publish the base-64 encoded public key as a TXT RR at:
-    # ethernet-ip-tool.cpppo-licensing._domainkey.awesome.com 300 IN TXT "v=DKIM1; k=ed25519; p=
-
+    # 
+    #     ethernet-ip-tool.crypto-licensing._domainkey.awesome.com 300 IN TXT \
+    #        "v=DKIM1; k=ed25519; p=PW847szICqnQBzbdr5TAoGO26RwGxG95e3Vd/M+/GZc="
+    #
     enduser_keypair		= author( seed=enduser_seed, why="from enduser seed" )
     enduser_pubkey, enduser_sigkey = into_keys( enduser_keypair )
     print("End User, LLC ed25519 keypair; Signing: {sk}".format( sk=into_hex( enduser_keypair.sk )))
@@ -390,7 +405,7 @@ def test_LicenseSigned():
 }""" == drv_prov_str
 
     # Test the cpppo.crypto.licensing API, as used in applications.  A LicenseSigned is saved to an
-    # <application>.cpppo-license file in the Application's configuration directory path.  The
+    # <application>.crypto-license file in the Application's configuration directory path.  The
     # process for deploying an application onto a new host:
     #
     # 1) Install software to target directory
@@ -400,11 +415,13 @@ def test_LicenseSigned():
     # 3) Derive a new License, specialized for the host's machine-id UUID
     #    - This will be a LicenseSigned by the company License server using the company's key,
     #    - It's client_pubkey will match this software installation's private key, and machine-id UUID
-    # 4) Save to <application>.cpppo-license in application's config path
+    # 4) Save to <application>.crypto-license in application's config path
 
     # Lets specialize the license for a specific machine, and with a specific start time
-    lic_host_dict = verify( drv_prov, confirm=False, machine=True, machine_id_path=machine_id_path,
-                            start="2022-09-28 08:00:00 Canada/Mountain" )
+    lic_host_dict		= verify(
+        drv_prov, confirm=False, machine=True, machine_id_path=machine_id_path,
+        start="2022-09-28 08:00:00 Canada/Mountain"
+    )
     #print( into_JSON( lic_host_dict, indent=4, default=str ))
     assert """\
 {
@@ -451,9 +468,16 @@ def test_LicenseSigned():
     "start":"2022-09-29 17:22:33 UTC"
 }""" == into_JSON( lic_host_dict, indent=4, default=str )
 
-    lic_host = License( author=dict( name="End User", product="application", pubkey=enduser_keypair ),
-                        confirm=False, machine_id_path=machine_id_path,
-                        **lic_host_dict )
+    lic_host			= License(
+        author	= dict(
+            name	= "End User",
+            product	= "application",
+            pubkey	= enduser_keypair
+        ),
+        confirm		= False,
+        machine_id_path	= machine_id_path,
+        **lic_host_dict
+    )
     lic_host_prov = issue( lic_host, enduser_keypair, confirm=False, machine_id_path=machine_id_path )
     lic_host_str = str( lic_host_prov )
     #print( lic_host_str )

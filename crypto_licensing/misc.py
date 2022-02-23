@@ -398,8 +398,8 @@ CONFIG_FILE			= CONFIG_BASE+'.cfg'    # Default application configuration file
 
 
 class Timestamp( datetime.datetime ):
-    """A simple Timestamp that can be specified from a Timestamp or datetime.datetime, and is always local to a
-    specific timezone, and formats simply and deterministically.
+    """A simple Timestamp that can be specified from a Timestamp or datetime.datetime, and is always
+    local to a specific timezone, and formats simply and deterministically.
 
     """
     UTC				= pytz.UTC
@@ -417,7 +417,8 @@ class Timestamp( datetime.datetime ):
 
     def __new__( cls, *args, **kwds ):
         """Since datetime.datetime is immutable, we must use __new__ and return one."""
-        kargs			= dict( zip( ('year', 'month', 'day', 'hour', 'minute', 'second', 'microsecond', 'tzinfo' ), args ))
+        kargs			= dict( zip(
+            ('year', 'month', 'day', 'hour', 'minute', 'second', 'microsecond', 'tzinfo' ), args ))
         assert len( kargs ) == len( args ), \
             "Too many args provided"
         kdup			= set( kargs ).intersection( kwds )
@@ -450,15 +451,15 @@ class Timestamp( datetime.datetime ):
         return datetime.datetime.__new__( cls, **kwds )
 
     def render( self, tzinfo=None, ms=True, tzdetail=None ):
-        """Render the time in the specified zone (default: local), optionally with milliseconds (default:
-        True).
+        """Render the time in the specified zone (default: local), optionally with milliseconds
+        (default: True).
 
         If the resultant timezone is not UTC, include the timezone full name in the output by
         default.  Thus, the output is always deterministic (only UTC times may every be output
         without timezone information).
 
-        If tzdetail is supplied, if bool/str and Truthy, always include full timezone name;
-        if Falsey, include abbreviation (warning: NOT parsable, because abbreviations are
+        If tzdetail is supplied, if bool/str and Truthy, always include full timezone name; if
+        Falsey, include abbreviation (warning: NOT parsable, because abbreviations are
         non-deterministic!).  If int and Truthy, always include full numeric timezone offset; if
         Falsey; only with non-UTC timezones.
 
@@ -532,8 +533,10 @@ class Timestamp( datetime.datetime ):
     # datetime.datetime is immutable, so cannot implemente __i{add/sub}__.  Converts to timedelta,
     # and uses underlying __{add,sub}__.
     def __add__( self, rhs ):
-        """Convert any int/float/str, etc. to a Duration/timedelta, and add it to the current Timestamp,
-        retaining its timezone preference.
+        """
+
+        Convert any int/float/str, etc. to a Duration/timedelta, and add it to the current
+        Timestamp, retaining its timezone preference.
 
         """
         if not isinstance( rhs, Duration):
@@ -550,7 +553,7 @@ class Timestamp( datetime.datetime ):
 
         """
         if isinstance( rhs, datetime.datetime ):
-            # Subtracting datetimes; result is a Duration; obtain from existing __sub__ returning a timedelta
+            # Subtracting datetimes; result is a Duration; from existing __sub__ --> timedelta
             return Duration( super( Timestamp, self ).__sub__( rhs ))
         # Subtracting something else; must be convertible by Duration into a timedelta
         rhs		= Duration( rhs )

@@ -2,12 +2,11 @@
 
 # From github.com/dholth/ed25519ll/ed25519ll (MIT licensed)
 # Uses a pure Python implementation only.
-# 
-# To use a faster C implementation, install the Python ed25519ll package using one of:
-# 
-#    pip3 install ed25519ll
-#    pip3 install git+https://github.com/pjkundert/ed25519ll.git@master
-#    pip3 install -r requirements-optional-crypto.txt
+#
+# To use a faster C implementation, install the Python ed25519ll package using:
+#
+#    python3 -m pip install ed25519ll
+#
 
 import warnings
 import os

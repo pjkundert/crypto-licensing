@@ -1,4 +1,3 @@
-
 #
 # Crypto-licensing -- Cryptographically signed licensing, w/ Cryptocurrency payments
 #
@@ -14,15 +13,19 @@
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 #
 
-from __future__ import absolute_import, print_function, division
+# We require that at least the basic dholth/ed25519ll API must be available
+__all__ = [
+    'crypto_sign', 'crypto_sign_open', 'crypto_sign_keypair', 'Keypair',
+    'PUBLICKEYBYTES', 'SECRETKEYBYTES', 'SIGNATUREBYTES'
+]
 
-__author__                      = "Perry Kundert"
-__email__                       = "perry@dominionrnd.com"
-__copyright__                   = "Copyright (c) 2022, Dominion Research & Development Corp."
-__license__                     = "Dual License: GPLv3 (or later) and Commercial (see LICENSE)"
-
-__all__				= ['ed25519', 'licensing']
-
-# These modules form the public interface of crypto-licensing; always load them into main namespace
-from .version	import __version__, __version_info__
-from .licensing	import *
+# Get Ed25519 support. Try a globally installed ed25519ll possibly with a CTypes binding
+try:
+    from ed25519ll import *
+except Exception: # If not installed/built correctly, may have various errors...
+    # Otherwise, try our local Python-only ed25519ll derivation
+    try:
+        from ..ed25519ll_pyonly import *
+    except ImportError:
+        # Fall back to the very slow D.J.Bernstein Python reference implementation
+        from ..ed25519_djb import *
