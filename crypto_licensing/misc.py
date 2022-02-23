@@ -493,9 +493,10 @@ class Timestamp( datetime.datetime ):
         return int( self.timestamp() )
 
     def timestamp( self ):
-        """Exists in Python 3.3+.  Convert a timezone-aware datetime to a UNIX timestamp.  You'd think
-        strftime( "%s.%f" )?  You'd be wrong; a timezone-aware datetime should always strftime
-        to the same (correct) UNIX timestamp via its "%s" format, but this also doesn't work.
+        """Exists in Python 3.3+.  Convert a timezone-aware datetime to a UNIX timestamp.  You'd
+        think strftime( "%s.%f" )?  You'd be wrong; a timezone-aware datetime should always
+        strftime to the same (correct) UNIX timestamp via its "%s" format, but this also doesn't
+        work.
 
         Convert the time to a UTC time tuple, then use calendar.timegm to take a UTC time tuple and
         compute the UNIX timestamp.
@@ -508,14 +509,27 @@ class Timestamp( datetime.datetime ):
 
     # Comparisons.  Always equivalent to lexicographically, in UTC to 3 decimal places.  However,
     # we'll compare numerically, to avoid having to render/compare strings; if the <self>.value is
-    # within _epsilon (default: 0.001) of <rhs>.value, it is considered equal.
+    # within _epsilon (default: 0.001) of <rhs>.value, it is considered equal.  Pypy2
+    # re-implements the pytz library w/ some comparisons against raw datetime.datetimes, so we
+    # have to support them directly; they have no .timestamp().  However, pypy2 has other issues,
+    # so we don't support it -- it is an optional optimization for Python2 code, anyway...
     def __lt__( self, rhs ):
-        assert isinstance( rhs, Timestamp )
-        return self.timestamp() + self.__class__._epsilon < rhs.timestamp()
+        assert isinstance( rhs, (Timestamp, datetime.datetime) ), \
+            "Expected Timestamp/datetime, got: {!r}".format( rhs )
+        try:
+            rhs_ts		= rhs.timestamp()
+        except AttributeError:
+            rhs_ts		= calendar.timegm( rhs.utctimetuple() ) + rhs.microsecond / 1000000
+        return self.timestamp() + self.__class__._epsilon < rhs_ts
 
     def __gt__( self, rhs ):
-        assert isinstance( rhs, Timestamp )
-        return self.timestamp() - self.__class__._epsilon > rhs.timestamp()
+        assert isinstance( rhs, (Timestamp, datetime.datetime) ), \
+            "Expected Timestamp/datetime, got: {!r}".format( rhs )
+        try:
+            rhs_ts		= rhs.timestamp()
+        except AttributteError:
+            rhs_ts		= calendar.timegm( rhs.utctimetuple() ) + rhs.microsecond / 1000000
+        return self.timestamp() - self.__class__._epsilon > rhs_ts
 
     def __le__( self, rhs ):
         return not self.__gt__( rhs )
