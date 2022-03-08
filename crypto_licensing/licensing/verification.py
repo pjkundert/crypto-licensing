@@ -30,6 +30,9 @@ import sys
 import traceback
 import uuid
 
+from .defaults		import (
+    MODULENAME, LICPATTERN, KEYPATTERN,
+)
 from ..misc		import (
     type_str_base, urlencode,
     parse_datetime, parse_seconds, Timestamp, Duration, Timespan,
@@ -319,7 +322,7 @@ def domainkey( product, domain, service=None, pubkey=None ):
     assert service, \
         "A service is required to deduce the DKIM DNS path"
     domain_name			= dns.name.from_text( domain )
-    service_name		= dns.name.Name( [service, 'crypto-licensing', '_domainkey'] )
+    service_name		= dns.name.Name( [service, MODULENAME, '_domainkey'] )
     path_name			= service_name + domain_name
     path			= path_name.to_text()
 
@@ -413,10 +416,8 @@ class Serializable( object ):
         return stream
 
     def sign( self, sigkey, pubkey=None ):
-        """
-
-        Sign our default serialization, and (optionally) confirm that the supplied public key (which
-        will be used to check the signature) is correct, by re-deriving the public key.
+        """Sign our default serialization, and (optionally) confirm that the supplied public key
+        (which will be used to check the signature) is correct, by re-deriving the public key.
 
         """
         vk, sk			= into_keys( sigkey )
@@ -426,7 +427,8 @@ class Serializable( object ):
             # Re-derive and confirm supplied public key matches supplied signing key
             keypair		= ed25519.crypto_sign_keypair( sk[:32] )
             assert keypair.vk == pubkey, \
-                "Mismatched ed25519 signing/public keys"
+                "Mismatched ed25519 signing vs. public keys {!r} vs. {!r}".format(
+                    into_b64( keypair.vk ), into_b64( pubkey ))
         signed			= ed25519.crypto_sign( self.serialize(), sk )
         signature		= signed[:64]
         return signature
@@ -747,7 +749,7 @@ class License( Serializable ):
 
         self.machine		= into_UUIDv4( machine )
 
-        # Only allow the construction of valid Licenses.
+        # Only allow the construction of valid Licenses
         self.verify( confirm=confirm, machine_id_path=machine_id_path )
 
     def overlap( self, *others ):
@@ -780,6 +782,7 @@ class License( Serializable ):
         signature	= None,
         confirm		= None,
         machine_id_path	= None,
+        dependencies	= False,  # Default to not include this LicenseSigned in returned constraints['dependencies']
         **constraints
     ):
         """Verify that the License is valid:
@@ -791,9 +794,12 @@ class License( Serializable ):
             - Allows any constraints supplied.
 
         If it does, the constraints are returned, including this LicenseSigned added to the
-        dependencies.  If no additional constraints are supplied, this will simply return the empty
-        constraints dict on success.  The returned constraints would be usable in constructing a new
-        License (assuming at least the necessary author, author_domain and product were defined).
+        constraints['dependencies'].  If no additional constraints are supplied, this will simply
+        return the empty constraints dict on success.  The returned constraints would be usable in
+        constructing a new License (assuming at least the necessary author, author_domain and
+        product were defined).
+
+        
 
         """
         if author_pubkey:
@@ -832,9 +838,10 @@ class License( Serializable ):
                         exc	= exc,
                     ))
 
-        # Verify any License dependencies are valid; signed w/ DKIM specified key, License OK.
-        # When verifying License dependencies, we don't supply the constraints, because we're not
-        # interested in sub-Licensing these Licenses, only verifying them.
+        # Verify any License dependencies are valid; signed w/ DKIM specified key, License OK.  When
+        # verifying License dependencies, we don't supply the constraints and decline inclusion of
+        # dependencies, because we're not interested in sub-Licensing these Licenses, only verifying
+        # them.
         for prov_dct in self.dependencies or []:
             prov		= LicenseSigned( confirm=confirm, **prov_dct )
             try:
@@ -933,12 +940,14 @@ class License( Serializable ):
             machine	= into_str( machine ) or into_str( constraints.get( 'machine' )) or '(any)',
         ))
 
-        # Finally, now that the License, all License dependencies and any supplied constraints have
+        # Finally, now that the License, all License.dependencies and any supplied constraints have
         # been verified, augment the constraints with this LicenseSigned as one of the dependencies.
-        if constraints:
+        if dependencies:
             assert signature is not None, \
                 "Attempt to issue a sub-License of an un-signed License"
-            constraints.setdefault( 'dependencies', [] )
+            assert isinstance( dependencies, (list,bool) ), \
+                "Provided dependencies must be False/True, or a list of LicenseSigned"
+            constraints['dependencies'] = [] if dependencies is True else dependencies
             constraints['dependencies'].append( dict(
                 LicenseSigned( license=self, signature=signature, confirm=confirm, machine_id_path=machine_id_path )
             ))
@@ -947,9 +956,9 @@ class License( Serializable ):
 
 
 class LicenseSigned( Serializable ):
-    """A License and its Ed25519 Signature provenance.  Only a LicenseSigned (and confirmation of the
-    author's public key) proves that a License was actually issued by the purported author.  It is
-    expected that authors will only sign a valid License.
+    """A License and its Ed25519 Signature provenance.  Only a LicenseSigned (and confirmation of
+    the author's public key) proves that a License was actually issued by the purported author.  It
+    is expected that authors will only sign a valid License.
 
     The public key of the author must be confirmed through independent means.  One typical means is
     by checking publication on the author's domain (the default behaviour w/ confirm=None), eg.:
@@ -1053,7 +1062,8 @@ class LicenseSigned( Serializable ):
         signature	= into_b64,
     )
 
-    def __init__( self, license, author_sigkey=None, signature=None, confirm=None, machine_id_path=None ):
+    def __init__( self, license, author_sigkey=None, signature=None, confirm=None,
+                  machine_id_path=None ):
         """Given an ed25519 signing key (32-byte private + 32-byte public), produce the provenance
         for the supplied License. 
 
@@ -1091,8 +1101,14 @@ class LicenseSigned( Serializable ):
             confirm		= confirm,
             machine_id_path	= machine_id_path )
 
-    def verify( self, author_pubkey=None, signature=None, confirm=None, machine_id_path=None,
-                **constraints ):
+    def verify(
+        self,
+        author_pubkey	= None,
+        signature	= None,
+        confirm		= None,
+        machine_id_path	= None,
+        **constraints
+    ):
         return self.license.verify(
             author_pubkey	= author_pubkey or self.license.author.pubkey,
             signature		= signature or self.signature,
@@ -1102,7 +1118,10 @@ class LicenseSigned( Serializable ):
 
 
 class KeypairPlaintext( Serializable ):
-    """De/serialize the plaintext Ed25519 private and public key material"""
+    """De/serialize the plaintext Ed25519 private and public key material.  Order of arguments is
+    NOT the same as ed25519.Keypair, b/c the public vk is optional.
+
+    """
     __slots__			= ('sk', 'vk')
     serializers			= dict(
         sk		= into_b64,
@@ -1144,7 +1163,7 @@ class KeypairPlaintext( Serializable ):
         keypair			= author( seed=self.sk[:32], why="provided plaintext signing key" )
         if self.vk:
             assert keypair.vk == self.vk, \
-                "Failed to derive matching Ed25519 signing key from supplied data"
+                "Failed to derive matching Ed25519 public key from supplied private key data"
         return keypair
 
 
@@ -1246,8 +1265,9 @@ class KeypairEncrypted( Serializable ):
 
 
 def author(
-    seed	= None,
-    why		= None ):
+    seed		= None,
+    why			= None,
+):
     """Prepare to author Licenses, by creating an Ed25519 keypair."""
     keypair			= ed25519.crypto_sign_keypair( seed )
     log.info( "Created Ed25519 signing keypair  w/ Public key: {vk_b64}{why}".format(
@@ -1258,9 +1278,10 @@ def author(
 def issue(
     license,
     author_sigkey,
-    signature	= None,
-    confirm	= None,
-    machine_id_path = None ):
+    signature		= None,
+    confirm		= None,
+    machine_id_path	= None,
+):
     """If possible, issue the license signed with the supplied signing key. Ensures that the license
     is allowed to be issued, by verifying the signatures of the tree of dependent license(s) if any.
 
@@ -1289,11 +1310,12 @@ def issue(
 
 def verify(
     provenance,
-    author_pubkey = None,
-    signature	= None,
-    confirm	= None,
-    machine_id_path = None,
-    **constraints ):
+    author_pubkey	= None,
+    signature		= None,
+    confirm		= None,
+    machine_id_path	= None,
+    **constraints
+):
     """Verify that the supplied License or LicenseSigned contains a valid signature, and that the
     License follows the rules in all of its License dependencies.  Optionally, confirm the validity
     of any public keys.
@@ -1322,11 +1344,12 @@ def load(
     filename	= None,
     package	= None,
     skip	= "*~",
-    **kwds ): # eg. extra=["..."], reverse=False, other open() args; see config_open
-    """Open and load all crypto-licens{e,ing} file(s) found on the config path(s) (and any
+    **kwds  # eg. extra=["..."], reverse=False, other open() args; see config_open
+):
+    """Open and load all crypto-lic[ens{e,ing}] file(s) found on the config path(s) (and any
     extra=[...,...]  paths) containing a LicenseSigned provenance record.  By default, use the
     provided package's (your __package__) name, or the executable filename's (your __file__)
-    basename.  Appends .crypto-licensing, if no suffix provided.
+    basename.  Assumes '<basename>.crypto-lic*', if no extension provided.
 
     Applies glob pattern matching via config_open....
 
@@ -1335,7 +1358,7 @@ def load(
 
     """
     name		= deduce_name(
-        basename=basename, extension=extension or 'crypto-licens*',
+        basename=basename, extension=extension or LICPATTERN,
         filename=filename, package=package )
     for f in config_open( name=name, mode=mode, skip=skip, **kwds ):
         with f:
@@ -1354,7 +1377,7 @@ def load_keys(
     username	= None,
     password	= None,		# Decryption credentials to use
     every	= False,
-    detail	= True,		# Yield every file? w/ origin + credentials info?
+    detail	= True,		# Yield every file w/ origin + credentials info or exception?
     skip	= "*~",
     **kwds ): # eg. extra=["..."], reverse=False, other open() args; see config_open
     """Load Ed25519 signing Keypair(s) from glob-matching file(s) with any supplied credentials.
@@ -1377,14 +1400,14 @@ def load_keys(
 
         The plaintext 256-bit Ed25519 private key seed is encrypted using ChaCha20Poly1305 with the
         symmetric cipher key using the (same) salt as a Nonce.  Since the random salt is only (ever)
-        used to encrypt one thing, it satisfies the requirement that the same None only ever be used
-        once to encrypt something using a certain key.
+        used to encrypt one thing, it satisfies the requirement that the same Nonce only ever be
+        used once to encrypt something using a certain key.
 
     - TODO: use a second Keypair's private key to derive a shared secret key
 
       Optionally, this Signing Keypair's derivation seed can be protected by a symmetric cipher
       key derived from the *public* key of this signing key, and the *private* key of another
-      Ed25519 key using the diffie-hellman.  For example, one derived via Argon2 from an email +
+      Ed25519 key using diffie-hellman.  For example, one derived via Argon2 from an email +
       password + salt.
 
     Therefore, the following deserialized Keypair dicts are supported:
@@ -1418,7 +1441,7 @@ def load_keys(
     issues			= []
     found			= 0
     name		= deduce_name(
-        basename=basename, extension=extension or 'crypto-keypair*', filename=filename, package=package )
+        basename=basename, extension=extension or KEYPATTERN, filename=filename, package=package )
     for f in config_open( name=name, mode=mode, skip=skip, **kwds ):
         try:
             with f:
@@ -1452,15 +1475,13 @@ def load_keys(
                     yield f_name, encrypted, dict( username=username, password=password ), exc
                 else:
                     yield f_name, exc
-            log.isEnabledFor( logging.DEBUG ) and log.debug(
-                "Failed to decrypt KeypairEncrypted: {trace}".format(
-                    trace=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.DEBUG ) else exc ))
+            log.debug( "Failed to decrypt KeypairEncrypted: {exc}".format(
+                exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
             continue
-        except Exception:
+        except Exception as exc:
             # Some other problem attempting to interpret this thing as a KeypairEncrypted; carry on and try again
-            log.isEnabledFor( logging.DEBUG ) and log.debug(
-                "Failed to decode  KeypairEncrypted: {trace}".format(
-                    trace=''.join( traceback.format_exception( *sys.exc_info() ))))
+            log.debug( "Failed to decode  KeypairEncrypted: {exc}".format(
+                exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
 
         plaintext		= None
         try:
@@ -1483,21 +1504,36 @@ def load_keys(
                     yield f_name, plaintext, {}, exc
                 else:
                     yield f_name, exc
-            log.isEnabledFor( logging.DEBUG ) and log.debug(
-                "Failed to decode KeypairPlaintext: {}".format(
-                    ''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.DEBUG ) else exc ))
+            log.debug( "Failed to decode KeypairPlaintext: {exc}".format(
+                exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
     if not found:
         log.info( "Cannot load Keypair(s) from {name}: {reasons}".format(
             name=name, reasons=', '.join( "{}: {}".format( fn, exc ) for fn, exc in issues )))
 
 
-def check( basename=None, mode=None,		# Keypair/License file basename and open mode
-           extension_keypair=None, extension_license=None,
-           filename=None, package=None,		#   or, deduce basename from supplied data
-           username=None, password=None,	# Keypair protected w/ supplied credentials
-           skip="*~", **kwds ): # eg. extra=["..."], reverse=False, other open() args; see config_open               **kwds ):
-    """Check that a License has been issued with the desired features.  If none founds, attempt to
-    obtain one.  Can deduce a basename from provided filename/package, if desired
+def check(
+    basename		= None,			# Keypair/License file basename and open mode
+    mode		= None,
+    extension_keypair	= None,
+    extension_license	= None,
+    filename		= None,			#   or, deduce basename from supplied data
+    package		= None,
+    username		= None,			# Keypair protected w/ supplied credentials
+    password		= None,
+    confirm		= None,
+    machine_id_path	= None,
+    constraints		= None,
+    skip		= "*~",
+    **kwds ):  # eg. extra=["..."], reverse=False, other open() args; see config_open
+    """Check that a License has been issued to our agent, for this machine and/or username,
+    yielding a sequence of <Keypair>, None/<LicenseSigned> found.
+
+    Thus, if a <Keypair> is found but no <LicenseSigned> can be found or assigned, the caller can
+    use the <Keypair> in a subsequent licence request, and then save the received LicenseSigned
+    provenance for future use.
+
+
+    Can deduce a basename from provided filename/package, if desired
 
     - Load our Ed25519 Keypair
       - Create one, if not found
@@ -1505,22 +1541,133 @@ def check( basename=None, mode=None,		# Keypair/License file basename and open m
       - Obtain one, if not found
 
     If an Ed25519 Agent signing authority or License must be created, the default location where
-    they will be stored is in the most general Cpppo configuration location that is writable.
+    they will be stored is in the most general configuration path location that is writable.
 
-    Agent signing authority is usually machine-specific: a License to run a program on one machine
-    usually doesn't transfer to another machine.  
+    Agent signing authority is usually machine- or username-specific: a License to run a program on
+    one machine and/or for one username usually doesn't transfer to another machine/username.
 
-    <basename>-<machine-id>.crypto-keypair...
-    <basename>-<machine-id>.crypto-license...
+        <basename>-<machine-id>.crypto-key...
+        <basename>-<machine-id>.crypto-lic...
 
     """
-    keypairs		= dict( (name, keypair_or_error)
-                                for name, keypair_typed, cred, keypair_or_error in load_keys(
-                                        basename=basename, mode=mode, extension=extension_keypair,
-                                        filename=filename, package=package,
-                                        every=True, detail=True,
-                                        username=username, password=password,
-                                        skip=skip, **kwds ))
-    log.debug( "Name          Keypair/Error" )
-    for n,k_e in keypairs.items():
-        log.debug( "{:48} {}".format( os.path.basename( n ), k_e ))
+    # Load any Keypair{Plaintext,Encrypted} available, and convert to a ed25519.Keypair,
+    # ready for signing/verification.
+    keypairs			= {}
+    for key_path, keypair_typed, cred, keypair_or_error in load_keys(
+            basename=basename, mode=mode, extension=extension_keypair,
+            filename=filename, package=package,
+            every=True, detail=True,
+            username=username, password=password,
+            skip=skip, **kwds
+    ):
+        if isinstance( keypair_or_error, ed25519.Keypair ):
+            keypairs.setdefault( key_path, keypair_or_error )
+            continue
+        log.info( "{key_path:32}: {exc}".format(
+            key_path=os.path.basename( key_path ), exc=keypair_or_error ))
+        
+    log.log( logging.DETAIL, "{:48} {}".format( 'File', 'Keypair' ))
+    for n,k in keypairs.items():
+        log.log( logging.DETAIL, "{:48} {}".format( os.path.basename( n ), into_b64( k.vk )))
+
+    licenses			= dict( load(
+        basename=basename, mode=mode, extension=extension_license,
+        filename=filename, package=package,
+        confirm=confirm, skip=skip, **kwds
+    ))
+
+
+    # See if license(s) has been (or can be) issued to our Agent keypair(s) (ie. was issued to this
+    # keypair as a specific client_pubkey or was non-client-specific, and then was signed by our
+    # Keypair), for this Machine ID.
+    checked			= {}
+    log.log( logging.NORMAL, "{:48} {:20} {:20} {}".format( 'File', 'Client', 'Author', 'Product' ))
+    key_seen			= set()
+    for key_path,keypair in keypairs.items():
+        if keypair in key_seen:
+            continue
+        key_seen.add( keypair )
+
+        # For each unique Keypair, discover any LicenceSigned we've been issued, or can issue.
+        prov,prov_path,reasons	= None,None,[]    # Why didn't any Licenses qualify?
+        for lic_path, lic in licenses.items():
+            # Was this license issued by our Keypair Agent as the author?  This means that one was
+            # issued by some author, with our Keypair Agent as a client, and we (previously) issued
+            # and saved it.
+            try:
+                verify(
+                    lic,
+                    author_pubkey	= keypair.vk,
+                    confirm		= confirm,
+                    machine_id_path	= machine_id_path,
+                    dependencies	= False,
+                    **( constraints or {} )
+                )
+            except Exception as exc:
+                log.info( "Checked {lic_path:32} / {key_path:32}: {exc}".format(
+                    lic_path=os.path.basename( lic_path ), key_path=os.path.basename( key_path ),
+                    exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
+                reasons.append( str( exc ))
+            else:
+                # This license passed muster w/ the constraints supplied and it was already issued
+                # to us; we're done.
+                prov,prov_path	= lic,lic_path
+                break
+
+            # License not already issued to us; check whether it could be ours w/ some remaining
+            # constraints requirements.  We're going to try to issue a sub-License, so include the
+            # LicenseSigned itself in the resultant computed constraints requirements.
+            try:
+                requirements	= verify(
+                    lic,
+                    confirm		= confirm,
+                    machine_id_path	= machine_id_path,
+                    dependencies	= True,
+                    **( constraints or {} )
+                )
+            except Exception as exc:
+                log.info( "Verify  {lic_path:32} / {key_path:32}: {exc}".format(
+                    lic_path=os.path.basename( lic_path ), key_path=os.path.basename( key_path ),
+                    exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
+                reasons.append( str( exc ))
+                continue
+            
+            # Validated this License is sub-Licensable by this Keypair Agent!  This License is
+            # available to be issued to us and verified, now, as one of our License dependencies.
+            # Craft a new License, w/ the requirements produced by the verify, above.  If the
+            # LicenseSigned provenance can be issued, it has fully passed verification.
+            log.log( logging.DETAIL, "Require {requirements!r}".format( requirements=requirements ))
+            try:
+                prov		= issue(
+                    License(
+                        author		= lic.license.client,
+                        confirm		= confirm,
+                        machine_id_path	= machine_id_path,
+                        **requirements
+                    ),
+                    author_sigkey	= keypair,
+                    confirm		= confirm,
+                    machine_id_path	= machine_id_path,
+                )
+            except Exception as exc:
+                log.info( "Issuing {lic_path:32} / {key_path:32} failure: {exc}".format(
+                    lic_path=os.path.basename( lic_path ), key_path=os.path.basename( key_path ),
+                    exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
+                reasons.append( str( exc ))
+                continue
+            else:
+                # The License was available to be issued as one of our dependencies, and passed
+                # remaining constraints requirements; Use prov; prov_path remains None.
+                break
+
+        log.log( logging.DETAIL if reasons else logging.NORMAL, "{:48} {:20.20} {:20.20} {:16.16}: {}".format(
+            os.path.basename( lic_path ),
+            "{}/{}".format( lic.license.client.name, into_b64( lic.license.client.pubkey )),
+            "{}/{}".format( lic.license.author.name, into_b64( lic.license.author.pubkey )),
+            lic.license.author.product,
+            ', '.join( reasons ) if prov is None else 'OK' ))
+
+        yield keypair, prov  # Reports <Keypair>,None/<LicenseSigned>
+
+    
+            

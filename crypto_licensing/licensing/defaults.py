@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 
 #
 # Crypto-licensing -- Cryptographically signed licensing, w/ Cryptocurrency payments
@@ -16,17 +17,7 @@
 
 from __future__ import absolute_import, print_function, division
 
-__author__                      = "Perry Kundert"
-__email__                       = "perry@dominionrnd.com"
-__copyright__                   = "Copyright (c) 2022, Dominion Research & Development Corp."
-__license__                     = "Dual License: GPLv3 (or later) and Commercial (see LICENSE)"
+MODULENAME			= 'crypto-licensing'
 
-__all__				= [
-    'Serializable', 'LicenseIncompatibility', 'License', 'LicenseSigned',
-    'domainkey', 'author', 'issue', 'verify', 'load', 'load_keys',
-    'KeypairEncrypted', 'KeypairPlaintext',
-    'KEYPATTERN', 'LICPATTERN',
-]
-
-from .defaults		import *
-from .verification	import *
+LICPATTERN			= 'crypto-lic*'
+KEYPATTERN			= 'crypto-key*'

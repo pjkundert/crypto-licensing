@@ -414,7 +414,7 @@ def test_LicenseSigned():
     #      master license and issues specialized ones up to the purchased limits (eg. 10 machines)
     # 3) Derive a new License, specialized for the host's machine-id UUID
     #    - This will be a LicenseSigned by the company License server using the company's key,
-    #    - It's client_pubkey will match this software installation's private key, and machine-id UUID
+    #    - Its client_pubkey will match this software installation's private key, and machine-id UUID
     # 4) Save to <application>.crypto-license in application's config path
 
     # Lets specialize the license for a specific machine, and with a specific start time
@@ -536,6 +536,143 @@ def test_LicenseSigned():
 
 
 def test_licensing_check():
-    check( extra=[os.path.dirname( __file__ )],
-           filename=__file__, package=__package__,  # filename takes precedence
-           username="a@b.c", password="passwor" )
+    checked			= dict(
+        (into_b64( key.vk ), lic)
+        for key,lic in check(
+            filename=__file__, package=__package__,  # filename takes precedence
+            username="a@b.c", password="passwor", confirm=False,
+            machine_id_path	= machine_id_path,
+            extra		= [os.path.dirname( __file__ )],
+        )
+    )
+    assert len( checked ) == 1 # bad password, but same key is available in plaintext
+    checked			= dict(
+        (into_b64( key.vk ), lic)
+        for key,lic in check(
+            filename=__file__, package=__package__,  # filename takes precedence
+            username="a@b.c", password="password", confirm=False,
+            machine_id_path	= machine_id_path,
+            extra		= [os.path.dirname( __file__ )],
+        )
+    )
+    assert len( checked ) == 1
+    checked_str		= into_JSON( checked, indent=4, default=str )
+    print( checked_str )
+    assert """\
+{
+    "O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik=":{
+        "license":{
+            "author":{
+                "name":"End User, LLC",
+                "pubkey":"O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik="
+            },
+            "dependencies":[
+                {
+                    "license":{
+                        "author":{
+                            "domain":"awesome-inc.com",
+                            "name":"Awesome, Inc.",
+                            "product":"EtherNet/IP Tool",
+                            "pubkey":"cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ="
+                        },
+                        "client":{
+                            "name":"End User, LLC",
+                            "pubkey":"O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik="
+                        },
+                        "dependencies":[
+                            {
+                                "license":{
+                                    "author":{
+                                        "domain":"dominionrnd.com",
+                                        "name":"Dominion Research & Development Corp.",
+                                        "product":"Cpppo Test",
+                                        "pubkey":"qZERnjDZZTmnDNNJg90AcUJZ+LYKIWO9t0jz/AzwNsk="
+                                    },
+                                    "client":{
+                                        "name":"Awesome, Inc.",
+                                        "pubkey":"cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ="
+                                    },
+                                    "length":"1y",
+                                    "start":"2021-09-30 17:22:33 UTC"
+                                },
+                                "signature":"9DbaJRrEm9krviJfhhPkFoH/LtN1uYG48xA/4CTe4ZcXQOhCfnc/HhpcO0kR1t5EzWt27U7SBYr2IwVpHAkLCg=="
+                            }
+                        ],
+                        "length":"1y",
+                        "start":"2022-09-29 17:22:33 UTC"
+                    },
+                    "signature":"KKMNf9Ds9uJYIrwBoFRjP3F1vt8d1bp7jYWlM0kn+hkMoJViI9BvMY923MjwgV9iMhYbiC6hfD3s28ULVK2KDA=="
+                }
+            ]
+        },
+        "signature":"3xPbvsJsxPjrpqQun2KXE0VR/HICVPQ6RLc7gsB2fZ3YWnchlcBArXkwV1OKDX+XxGjYhNN+k+vlUop+tHxkCQ=="
+    }
+}""" == checked_str
+
+    # Now, check that we can issue the license to our machine-id.
+    checked			= dict(
+        (into_b64( key.vk ), lic)
+        for key,lic in check(
+            filename=__file__, package=__package__,  # filename takes precedence
+            username="a@b.c", password="password", confirm=False,
+            machine_id_path	= machine_id_path,
+            extra		= [os.path.dirname( __file__ )],
+            constraints		= dict(
+                machine		= True,
+            )
+        )
+    )
+    assert len( checked ) == 1
+    checked_str		= into_JSON( checked, indent=4, default=str )
+    print( checked_str )
+    assert """\
+{
+    "O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik=":{
+        "license":{
+            "author":{
+                "name":"End User, LLC",
+                "pubkey":"O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik="
+            },
+            "dependencies":[
+                {
+                    "license":{
+                        "author":{
+                            "domain":"awesome-inc.com",
+                            "name":"Awesome, Inc.",
+                            "product":"EtherNet/IP Tool",
+                            "pubkey":"cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ="
+                        },
+                        "client":{
+                            "name":"End User, LLC",
+                            "pubkey":"O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik="
+                        },
+                        "dependencies":[
+                            {
+                                "license":{
+                                    "author":{
+                                        "domain":"dominionrnd.com",
+                                        "name":"Dominion Research & Development Corp.",
+                                        "product":"Cpppo Test",
+                                        "pubkey":"qZERnjDZZTmnDNNJg90AcUJZ+LYKIWO9t0jz/AzwNsk="
+                                    },
+                                    "client":{
+                                        "name":"Awesome, Inc.",
+                                        "pubkey":"cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ="
+                                    },
+                                    "length":"1y",
+                                    "start":"2021-09-30 17:22:33 UTC"
+                                },
+                                "signature":"9DbaJRrEm9krviJfhhPkFoH/LtN1uYG48xA/4CTe4ZcXQOhCfnc/HhpcO0kR1t5EzWt27U7SBYr2IwVpHAkLCg=="
+                            }
+                        ],
+                        "length":"1y",
+                        "start":"2022-09-29 17:22:33 UTC"
+                    },
+                    "signature":"KKMNf9Ds9uJYIrwBoFRjP3F1vt8d1bp7jYWlM0kn+hkMoJViI9BvMY923MjwgV9iMhYbiC6hfD3s28ULVK2KDA=="
+                }
+            ],
+            "machine":"00010203-0405-4607-8809-0a0b0c0d0e0f"
+        },
+        "signature":"al8ncEFYqeW4XoZo+/15LGTx1K1bcIuUemxJ6Yq2QqPFgOtKwGZ7mrmY1unuWOtsy8ODGniGUP7jeAokgI+kBQ=="
+    }
+}""" == checked_str

@@ -89,21 +89,47 @@ Miscellaneous functionality used by various other modules.
 # 
 # Logging related tooling
 # 
+
+# 
+# Add some new levels, w/ minimal functionality.  We cannot (easily) add new eg. logging.boo
+# functions for logging level BOO, because logging uses an extremely fragile mechanism for finding
+# the first non-logging function stack frame.  So, we must use .log( logging.BOO, ... ) with the new
+# levels...  We've tried to be consistent w/ cpppo's logging levels.
+# 
+
+#      .FATAL 		       == 50
+#      .ERROR 		       == 40
+#      .WARNING 	       == 30
+logging.NORMAL			= logging.INFO+5        # 25
+logging.DETAIL			= logging.INFO+3        # 23
+#      .INFO    	       == 20
+#      .DEBUG    	       == 10
+logging.TRACE			= logging.NOTSET+5      # 5
+#      .NOTSET    	       == 0
+
+logging.addLevelName( logging.NORMAL,	'NORMAL' )
+logging.addLevelName( logging.DETAIL,	'DETAIL' )
+logging.addLevelName( logging.TRACE,	'TRACE' )
+
+
 log				= logging.getLogger( "misc" )
 
 log_cfg				= {
-    "level":	logging.WARNING,
+    "level":	logging.NORMAL,
     "datefmt":	'%Y-%m-%d %H:%M:%S',
     #"format":	'%(asctime)s.%(msecs).03d %(threadName)10.10s %(name)-16.16s %(levelname)-8.8s %(funcName)-10.10s %(message)s',
-    "format":	'%(asctime)s %(name)-16.16s %(message)s',
+    "format":	'%(asctime)s %(name)-16.16s $(levelname)-8.8s %(message)s',
 }
 
 log_levelmap 			= {
     -2: logging.FATAL,
     -1: logging.ERROR,
     0: logging.WARNING,
-    1: logging.INFO,
-    2: logging.DEBUG,
+    1: logging.NORMAL,
+    2: logging.DETAIL,
+    3: logging.INFO,
+    4: logging.DEBUG,
+    5: logging.TRACE,
 }
 
 

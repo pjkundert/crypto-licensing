@@ -18,7 +18,7 @@
 #
 
 """
-    Implements the Cpppo Licensing Server
+    Implements the Crypto Licensing Server
 """
 
 from __future__ import print_function, absolute_import, division
@@ -82,7 +82,9 @@ session_initializer		= {
     'login':	0,			# 0 guest, 1 user, 2 admin
 }
 
-
+from .defaults		import (
+    KEYPATTERN, LICPATTERN,
+)
 from ..misc		import (
     timer, Timestamp, Duration,
     type_str_base,    
@@ -99,10 +101,10 @@ DB_FILE				= "licensing.db"
 ACCFILE				= "licensing.access"
 
 CRDFILE				= "licensing.credentials"	# Any author credentials available persistently
-KEYFILE				= "licensing.cpppo-keypair*"
-LICFILE				= "licensing.cpppo-license*"
+KEYFILE				= "licensing." + KEYPATTERN
+LICFILE				= "licensing." + LICPATTERN
 
-# SQL configurations are typically found in cpppo/crypto/licensing/, but may be customized and
+# SQL configurations are typically found in crypto_licensing/licensing, but may be customized and
 # placed in any of the Cpppo configuration file paths (eg. ~/.cpppo/, /etc/cpppo/, or the current
 # working directory)
 SQLFILE				= "licensing.sql" # this + .* are loaded
