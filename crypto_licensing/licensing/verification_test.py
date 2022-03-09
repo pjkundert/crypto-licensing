@@ -20,12 +20,12 @@ from .verification import (
     domainkey, domainkey_service, overlap_intersect,
     into_b64, into_hex, into_str, into_str_UTC, into_JSON, into_keys,
     into_timestamp, into_duration,
-    author, issue, verify, load, load_keys, check,
+    author, issue, verify, load, load_keys, check, authorize,
 )
 from .. import ed25519
 
-from ..misc import parse_datetime, parse_seconds, Timestamp, Duration
-
+from ..misc import parse_datetime, parse_seconds, Timestamp, Duration, deduce_name
+from .defaults import LICEXTENSION
 
 log				= logging.getLogger( "verification_test" )
 
@@ -422,7 +422,8 @@ def test_LicenseSigned():
         drv_prov, confirm=False, machine=True, machine_id_path=machine_id_path,
         start="2022-09-28 08:00:00 Canada/Mountain"
     )
-    #print( into_JSON( lic_host_dict, indent=4, default=str ))
+    lic_host_dict_str = into_JSON( lic_host_dict, indent=4, default=str )
+    #print( lic_host_dict_str )
     assert """\
 {
     "dependencies":[
@@ -466,7 +467,7 @@ def test_LicenseSigned():
     "length":"1d6h",
     "machine":"00010203-0405-4607-8809-0a0b0c0d0e0f",
     "start":"2022-09-29 17:22:33 UTC"
-}""" == into_JSON( lic_host_dict, indent=4, default=str )
+}""" == lic_host_dict_str
 
     lic_host			= License(
         author	= dict(
@@ -481,7 +482,7 @@ def test_LicenseSigned():
     lic_host_prov = issue( lic_host, enduser_keypair, confirm=False, machine_id_path=machine_id_path )
     lic_host_str = str( lic_host_prov )
     #print( lic_host_str )
-    assert """\
+    assert lic_host_str == """\
 {
     "license":{
         "author":{
@@ -532,7 +533,7 @@ def test_LicenseSigned():
         "start":"2022-09-29 17:22:33 UTC"
     },
     "signature":"8m+gfL5qPd7XPc1N87tPm9noDSOU5f1ToeN6NuQO9vYS+xca6hkUuZPdUjQ9/jcjNrj8IGeGYzoPIIUQ/LxcAw=="
-}""" == lic_host_str
+}"""
 
 
 def test_licensing_check():
@@ -557,7 +558,7 @@ def test_licensing_check():
     )
     assert len( checked ) == 1
     checked_str		= into_JSON( checked, indent=4, default=str )
-    print( checked_str )
+    #print( checked_str )
     assert """\
 {
     "O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik=":{
@@ -609,7 +610,8 @@ def test_licensing_check():
     }
 }""" == checked_str
 
-    # Now, check that we can issue the license to our machine-id.
+    # Now, check that we can issue the license to our machine-id.  Since we don't specify a client,
+    # any client Agent Keypair could sub-license this License, on that machine-id.
     checked			= dict(
         (into_b64( key.vk ), lic)
         for key,lic in check(
@@ -624,7 +626,7 @@ def test_licensing_check():
     )
     assert len( checked ) == 1
     checked_str		= into_JSON( checked, indent=4, default=str )
-    print( checked_str )
+    #print( checked_str )
     assert """\
 {
     "O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik=":{
@@ -676,3 +678,67 @@ def test_licensing_check():
         "signature":"al8ncEFYqeW4XoZo+/15LGTx1K1bcIuUemxJ6Yq2QqPFgOtKwGZ7mrmY1unuWOtsy8ODGniGUP7jeAokgI+kBQ=="
     }
 }""" == checked_str
+
+
+def test_licensing_authorize( tmp_path ):
+    basename			= deduce_name(
+        filename=__file__, package=__package__
+    ) + '-authorize'
+
+    # Get an agent-agnosic license for any client agent on this machine-id, from End User, LLC.
+    # This would normally come from End User, LLC's license server (which would hold End User, LLC's
+    # corporate Keypair).  This license is good for any number of application agent's Keypairs
+    # running on this machine.
+    checked			= dict(
+        (into_b64( key.vk ), lic)
+        for key,lic in check(
+            filename=__file__, package=__package__,  # filename takes precedence
+            username="a@b.c", password="password", confirm=False,
+            machine_id_path	= machine_id_path,
+            extra		= [
+                os.path.dirname( __file__ )  # This test's directory
+            ],
+            constraints		= dict(
+                machine		= True,
+            )
+        )
+    )
+    assert len( checked ) == 1
+
+    print( "Changing CWD to {}".format( tmp_path ))
+    os.chdir( str( tmp_path ))
+
+    # Lets save the End User, LLC machine-id license in our temp. dir
+    lic_machine			= LicenseSigned(
+        confirm		= False,
+        machine_id_path	= machine_id_path,
+        **checked.popitem()[1]
+    )
+    machine			= lic_machine.license.machine
+    print( "Saving our License: {}".format( into_JSON( dict( lic_machine ), indent=4 )))
+    with open( basename + '.' + LICEXTENSION + "-enduser-{}".format( machine ), 'wb' ) as f:
+        f.write( lic_machine.serialize( indent=4 ))
+
+    # OK, we want to get a license, issued to this dynamically generated application agent's
+    # Keypair, to run Awesome, Inc's "EtherNet/IP Tool" on this machine.  We know our company, End
+    # User, LLC has a license to run "EtherNet/IP Tool" on any machine, any number of times, and
+    # that it was previously saved (eg. when we installed a copy of "EtherNet/IP Tool" here?)  So,
+    # we should be able to find it...
+    authorized			= list( (KeypairPlaintext( k.sk ),l) for k,l in authorize(
+        domain		= 'awesome-inc.com',
+        product		= 'EtherNet/IP Tool',
+        username	= 'a@b.c',
+        password	= 'password',
+        basename	= basename,
+        machine_id_path	= machine_id_path,
+        confirm		= False,
+        reverse_save	= True,  # Save in most specific (instead of most general) location
+        extra		= [      # config_paths and extras are always in general to specific order
+            os.path.dirname( __file__ ),
+            str( tmp_path ),
+        ],
+    ))
+
+    assert len( authorized ) == 1
+    authorized_str		= into_JSON( authorized, indent=4, default=str )
+    print( authorized_str )

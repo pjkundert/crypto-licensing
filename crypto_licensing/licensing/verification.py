@@ -30,13 +30,15 @@ import sys
 import traceback
 import uuid
 
+from enum import Enum
+
 from .defaults		import (
-    MODULENAME, LICPATTERN, KEYPATTERN,
+    MODULENAME, LICPATTERN, LICEXTENSION, KEYPATTERN, KEYEXTENSION,
 )
 from ..misc		import (
     type_str_base, urlencode,
     parse_datetime, parse_seconds, Timestamp, Duration, Timespan,
-    deduce_name, config_open,
+    deduce_name, config_open, config_open_deduced,
 )
 
 __author__                      = "Perry Kundert"
@@ -560,11 +562,11 @@ class Agent( Serializable ):
     )
 
     def __init__( self, name,
-                  pubkey	= None,			# Normally, obtained from domain's DKIM1 TXT RR
-                  domain	= None,			# Needed for DKIM if no pubkey provided
-                  product	= None,
-                  service	= None,			# Normally, derived from product name
-                 ):
+        pubkey		= None,			# Normally, obtained from domain's DKIM1 TXT RR
+        domain		= None,			# Needed for DKIM if no pubkey provided
+        product		= None,
+        service		= None,			# Normally, derived from product name
+    ):
         # Obtain the Agent's public key; either given through the API, or obtained from their
         # domain's DKIM entry.
         assert pubkey or ( domain and ( product or service )), \
@@ -723,6 +725,10 @@ class License( Serializable ):
         machine_id_path	= None,
         confirm		= None,				# Validate License' author_pubkey from DNS
     ):
+        # Who is authoring this License, and who (if anyone in particular) is this License intended
+        # for?  If no client is specified, any agent Keypair may issue a sub-license this license.
+        assert author, \
+            "Issuing a Licence without an author is incorrect"
         if isinstance( author, type_str_base ):
             author		= json.loads( author )	# Deserialize Agent, if necessary
         self.author	= Agent( **author )
@@ -732,7 +738,7 @@ class License( Serializable ):
 
         # Reconstitute LicenseSigned provenance from any dicts provided
         self.dependencies	= None if dependencies is None else list(
-            LicenseSigned( confirm=confirm, **prov ) if isinstance( prov, dict ) else prov
+            LicenseSigned( confirm=confirm, machine_id_path=machine_id_path, **prov ) if isinstance( prov, dict ) else prov
             for prov in dependencies
         )
 
@@ -841,12 +847,19 @@ class License( Serializable ):
         # Verify any License dependencies are valid; signed w/ DKIM specified key, License OK.  When
         # verifying License dependencies, we don't supply the constraints and decline inclusion of
         # dependencies, because we're not interested in sub-Licensing these Licenses, only verifying
-        # them.
+        # them.  If a License dependency specifies a client, make certain it matches the issued
+        # License's author; otherwise, any author is allowed.
+
+        # TODO: Issuing a License that allows "anonymous" clients is somewhat dangerous, as the
+        # entire package of License capabilities can be acquired by anyone.  When we validate
+        # capabilities requested against those granted by a License, we must "stop", when we
+        # encounter any anonymous License dependencies -- any capabilities they grant cannot be
+        # assumed to be "for" the licensee; the Agent authoring the present license.
         for prov_dct in self.dependencies or []:
-            prov		= LicenseSigned( confirm=confirm, **prov_dct )
+            prov		= LicenseSigned( confirm=confirm, machine_id_path=machine_id_path, **prov_dct )
             try:
                 prov.verify( confirm=confirm, machine_id_path=machine_id_path )
-                assert prov.license.client.pubkey is None or prov.license.client.pubkey == self.author.pubkey, \
+                assert prov.license.client is None or prov.license.client.pubkey is None or prov.license.client.pubkey == self.author.pubkey, \
                     "sub-License client public key {client_pubkey} doesn't match Licence author's public key {author_pubkey}".format(
                         client_pubkey	= into_b64( prov.license.client.pubkey ),
                         author_pubkey	= into_b64( self.author.pubkey ),
@@ -911,20 +924,22 @@ class License( Serializable ):
             machine_uuid	= machine_UUIDv4( machine_id_path=machine_id_path )
             if self.machine not in (None, True) and self.machine != machine_uuid:
                 raise LicenseIncompatibility(
-                    "License for {auth}'s {prod!r} specifies Machine ID {required}; found {detected}".format(
+                    "License for {auth}'s {prod!r} specifies Machine ID {required}; found {detected}{via}".format(
                         auth	= self.author.name,
                         prod	= self.author.product,
                         required= self.machine,
                         detected= machine_uuid,
+                        via	= " (via {})".format( machine_id_path ) if machine_id_path else "",
                     ))
             machine_cons	= constraints.get( 'machine' )
             if machine_cons not in (None, True) and machine_cons != machine_uuid:
                 raise LicenseIncompatibility(
-                    "Constraints on {auth}'s {prod!r} specifies Machine ID {required}; found {detected}".format(
+                    "Constraints on {auth}'s {prod!r} specifies Machine ID {required}; found {detected}{vie}".format(
                         auth	= self.author.name,
                         prod	= self.author.product,
                         required= machine_cons,
                         detected= machine_uuid,
+                        via	= " (via {})".format( machine_id_path ) if machine_id_path else "",
                     ))
             # Finally, unless the supplied 'machine' constraint was explicitly None (indicating that
             # the caller desires a machine-agnostic sub-License), default to constrain the License to
@@ -1099,7 +1114,8 @@ class LicenseSigned( Serializable ):
         self.verify(
             author_pubkey	= author_sigkey,
             confirm		= confirm,
-            machine_id_path	= machine_id_path )
+            machine_id_path	= machine_id_path,
+        )
 
     def verify(
         self,
@@ -1197,7 +1213,7 @@ class KeypairEncrypted( Serializable ):
             self.salt		= into_bytes( salt, ('hex',) )
         else:
             # If salt not supplied, supply one -- but we obviously can't be given an encrypted seed!
-            assert vk and not ciphertext, \
+            assert sk and not ciphertext, \
                 "Expected unencrypted keypair if no is salt provided"
             self.salt		= os.urandom( 12 )
         assert len( self.salt ) == 12, \
@@ -1327,23 +1343,28 @@ def verify(
 
     Works with either a License and signature= keyword parameter, or a LicenseSigned provenance.
 
+    Always demands that any LicenseSigned dependencies are included in the resultant remaining
+    constraints; so that a sub-License can be produced.
+
     """
     return provenance.verify(
         author_pubkey	= author_pubkey,
         signature	= signature or provenance.signature,
         confirm		= confirm,
         machine_id_path	= machine_id_path,
+        dependencies	= True,
         **constraints )
 
     
 def load(
-    basename	= None,
-    mode	= None,
-    extension	= None,
-    confirm	= None,
-    filename	= None,
-    package	= None,
-    skip	= "*~",
+    basename		= None,
+    mode		= None,
+    extension		= None,
+    confirm		= None,
+    machine_id_path	= None,
+    filename		= None,
+    package		= None,
+    skip		= "*~",
     **kwds  # eg. extra=["..."], reverse=False, other open() args; see config_open
 ):
     """Open and load all crypto-lic[ens{e,ing}] file(s) found on the config path(s) (and any
@@ -1365,7 +1386,9 @@ def load(
             prov_ser		= f.read()
             prov_name		= f.name
         prov_dict		= json.loads( prov_ser )
-        yield prov_name, LicenseSigned( confirm=confirm, **prov_dict )
+        prov			= LicenseSigned(
+            confirm=confirm, machine_id_path=machine_id_path, **prov_dict )
+        yield prov_name, prov
     
 
 def load_keys(
@@ -1457,7 +1480,7 @@ def load_keys(
         # Attempt to recover the different Keypair...() types, from most stringent requirements to least.
         encrypted		= None
         try:
-            encrypted		= KeypairEncrypted( username=username, password=password, **keypair_dict )
+            encrypted		= KeypairEncrypted( **keypair_dict )  # accepts ciphertext, salt
             keypair		= encrypted.into_keypair( username=username, password=password )
             log.info( "Recover Ed25519 KeypairEncrypted w/ Public key: {} (from {}) w/ credentials {} / {}".format(
                 into_b64( keypair.vk ), f_name, username, '*' * len( password )))
@@ -1469,14 +1492,14 @@ def load_keys(
             continue
         except KeypairCredentialError as exc:
             # The KeypairEncrypted was OK -- just the credentials were wrong; don't bother trying as non-Encrypted
+            log.debug( "Failed to decrypt KeypairEncrypted: {exc}".format(
+                exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
             issues.append( (f_name, exc) )
             if every:
                 if detail:
                     yield f_name, encrypted, dict( username=username, password=password ), exc
                 else:
                     yield f_name, exc
-            log.debug( "Failed to decrypt KeypairEncrypted: {exc}".format(
-                exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
             continue
         except Exception as exc:
             # Some other problem attempting to interpret this thing as a KeypairEncrypted; carry on and try again
@@ -1573,9 +1596,8 @@ def check(
     licenses			= dict( load(
         basename=basename, mode=mode, extension=extension_license,
         filename=filename, package=package,
-        confirm=confirm, skip=skip, **kwds
+        confirm=confirm, machine_id_path=machine_id_path, skip=skip, **kwds
     ))
-
 
     # See if license(s) has been (or can be) issued to our Agent keypair(s) (ie. was issued to this
     # keypair as a specific client_pubkey or was non-client-specific, and then was signed by our
@@ -1589,14 +1611,14 @@ def check(
         key_seen.add( keypair )
 
         # For each unique Keypair, discover any LicenceSigned we've been issued, or can issue.
-        prov,prov_path,reasons	= None,None,[]    # Why didn't any Licenses qualify?
+        lic_path,lic		= None,None	 # If no Licensese found, at all
+        prov,prov_path,reasons	= None,None,[]   # Why didn't any Licenses qualify?
         for lic_path, lic in licenses.items():
             # Was this license issued by our Keypair Agent as the author?  This means that one was
             # issued by some author, with our Keypair Agent as a client, and we (previously) issued
             # and saved it.
             try:
-                verify(
-                    lic,
+                lic.verify(
                     author_pubkey	= keypair.vk,
                     confirm		= confirm,
                     machine_id_path	= machine_id_path,
@@ -1618,8 +1640,7 @@ def check(
             # constraints requirements.  We're going to try to issue a sub-License, so include the
             # LicenseSigned itself in the resultant computed constraints requirements.
             try:
-                requirements	= verify(
-                    lic,
+                requirements	= lic.verify(
                     confirm		= confirm,
                     machine_id_path	= machine_id_path,
                     dependencies	= True,
@@ -1635,17 +1656,24 @@ def check(
             # Validated this License is sub-Licensable by this Keypair Agent!  This License is
             # available to be issued to us and verified, now, as one of our License dependencies.
             # Craft a new License, w/ the requirements produced by the verify, above.  If the
-            # LicenseSigned provenance can be issued, it has fully passed verification.
+            # LicenseSigned provenance can be issued, it has fully passed verification.  We are
+            # assuming that the License is sub-licensable by this agent's Keypair as the client; if
+            # the License allows anonymous clients (no lic.license.client specified), then make an
+            # ad-hoc Agent record.
             log.log( logging.DETAIL, "Require {requirements!r}".format( requirements=requirements ))
             try:
+                author		= lic.license.client
+                if not author:
+                    pubkey	= into_b64( keypair.vk )
+                    author	= Agent( name=pubkey, pubkey=pubkey )
                 prov		= issue(
                     License(
-                        author		= lic.license.client,
+                        author		= author,
                         confirm		= confirm,
                         machine_id_path	= machine_id_path,
                         **requirements
                     ),
-                    author_sigkey	= keypair,
+                    author_sigkey	= keypair.sk,
                     confirm		= confirm,
                     machine_id_path	= machine_id_path,
                 )
@@ -1660,14 +1688,106 @@ def check(
                 # remaining constraints requirements; Use prov; prov_path remains None.
                 break
 
-        log.log( logging.DETAIL if reasons else logging.NORMAL, "{:48} {:20.20} {:20.20} {:16.16}: {}".format(
-            os.path.basename( lic_path ),
-            "{}/{}".format( lic.license.client.name, into_b64( lic.license.client.pubkey )),
-            "{}/{}".format( lic.license.author.name, into_b64( lic.license.author.pubkey )),
-            lic.license.author.product,
-            ', '.join( reasons ) if prov is None else 'OK' ))
+        log.log( logging.DETAIL if prov is None else logging.NORMAL, "{!r:48} {!r:20.20} {!r:20.20} {!r:16.16}: {}".format(
+            'N/A' if not lic_path else os.path.basename( lic_path ),
+            'N/A' if not lic or not lic.license.client else "{}/{}".format( lic.license.client.name, into_b64( lic.license.client.pubkey )),
+            'N/A' if not lic else "{}/{}".format( lic.license.author.name, into_b64( lic.license.author.pubkey )),
+            'N/A' if not lic or not lic.license.author.product else lic.license.author.product,
+            'OK' if prov else ', '.join( reasons )))
 
         yield keypair, prov  # Reports <Keypair>,None/<LicenseSigned>
 
-    
-            
+
+def authorize(
+    domain, product,			# The product we're licensing
+    service		= None,		# ..can be deduced from product, usually
+    username		= None,		# The credentials for our agent's Keypair
+    password		= None,
+    basename		= None,
+    filename		= None,
+    package		= None,
+    confirm		= None,
+    machine_id_path	= None,
+    constraints		= None,
+    reverse		= True,		# Default to look from most specific, to most general location
+    reverse_save	= None,		# Default to save in the opposite of look-up (most general, to most specific location)
+    extra		= None,
+    skip		= "*~",
+):
+    """If possible, load and verify the agent's KeyPair (creating one if necessary), and the
+    available LicenseSigned for the product.  If it can be proven that:
+
+    1) The KeyPair belongs to the agent (unencrypted, decrypted or signed by the agent)
+    2) the License is signed by the agent's KeyPair signing key (proving that the agent asked
+       for it, and it was issued to the agent)
+    3) The License was issued for the machine-id on which we are running, and remains valid
+    4) The License contains the required capabilities
+
+    then the requested capability is authorized.
+
+    Otherwise, use the agent's Keypair to obtain a License for the specified capability/constraints.
+
+    """
+    class State( Enum ):
+        START	= 0
+        TEST	= 1
+        CREATE	= 2
+
+    state		= State.START
+    while state is not State.CREATE:
+        state		= State( state.value + 1 )
+        log.warning( "Authorizing in state {state!r}".format( state=state ))
+        if state is State.CREATE:
+            keypair		= author( why="End-user Keypair" )
+            keypair		= KeypairEncrypted(
+                sk		= keypair.sk,
+                username	= username,
+                password	= password,
+            ) if username and password else KeypairPlaintext(
+                sk		= keypair.sk,
+            )
+            keypair_path	= None
+            # Defaults to save in the most general, to most specific location
+            for f in config_open_deduced(
+                basename	= basename,
+                mode		= "wb",
+                extension	= KEYEXTENSION,
+                filename	= filename,
+                package		= package,
+                reverse		= not reverse if reverse_save is None else reverse_save,
+                extra		= extra,
+                skip		= None,  # For writing/creating, of course we don't want to "skip" anything...
+            ):
+                try:
+                    keypair_path	= f.name
+                    log.warning( "Trying {path}".format( path=keypair_path ))
+                    with f:
+                        f.write( keypair.serialize( indent=4, encoding='UTF-8' ))
+                        f.flush()
+                except Exception as exc:
+                    log.detail( "Writing End-user Keypair to {path} failed: {exc}".format(
+                        path	= keypair_path,
+                        exc	= exc,
+                    ))
+                    keypair_path	= None
+                else:
+                    log.normal( "Writing End-user Keypair to {path}".format(
+                        path	= keypair_path,
+                    ))
+                    break
+
+        # Try to find all keypairs and licenses.  As soon as we've found *at least* one, indicate that
+        # we are done by switching to the CREATE state.
+        for key,lic in check(
+            username	= username,
+            password	= password,
+            basename	= basename,
+            filename	= filename,
+            package	= package,
+            confirm	= confirm,
+            machine_id_path = machine_id_path,
+            reverse	= reverse,
+            extra	= extra,
+        ):
+            yield key,lic
+            state	= State.CREATE

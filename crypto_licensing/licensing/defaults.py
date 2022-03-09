@@ -19,5 +19,7 @@ from __future__ import absolute_import, print_function, division
 
 MODULENAME			= 'crypto-licensing'
 
+LICEXTENSION			= 'crypto-license'
 LICPATTERN			= 'crypto-lic*'
+KEYEXTENSION			= 'crypto-keypair'
 KEYPATTERN			= 'crypto-key*'

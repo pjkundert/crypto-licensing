@@ -650,6 +650,11 @@ def config_open( name, mode=None, extra=None, skip=None, reverse=True, **kwds ):
     A 'skip' glob pattern or predicate function taking a single name and returning True/False may be
     supplied.
 
+    When reading and writing to *existing* files, skip and the glob pattern matching is supported.
+    When creating *new* files, of course skip (fnmatch) and glob patterns must be avoided (because
+    they only interact with already existing files).  So, avoid using any globbing characters "*?[]"
+    in the filename, or it will be impossible to create a file.
+
     """
     if isinstance( skip, type_str_base ):
         filtered		= lambda names: (n for n in names if not fnmatch.fnmatch( n, skip ))  # noqa: E731
@@ -663,12 +668,21 @@ def config_open( name, mode=None, extra=None, skip=None, reverse=True, **kwds ):
     search			= list( config_paths( name, extra=extra ))
     if reverse:
         search			= reversed( search )
+    is_globbing			= glob.has_magic( name )
     for fn in search:
-        for gn in sorted( filtered( glob.glob( fn ))):
+        log.debug( "config_open search {fn!r}{globbing}".format(
+            fn=fn, globbing=" w/ globbing" if is_globbing else "" ))
+        for gn in sorted( filtered( glob.iglob( fn ) if is_globbing else [ fn ] )):
             try:
-                yield open( gn, mode=mode or 'r', **kwds )
-            except Exception:
+                f		= open( gn, mode=mode or 'r', **kwds )
+                log.debug( "config_open opened {fn!r} in mode {mode!r}".format(
+                    fn=f.name, mode=mode or 'r' ))
+                yield f
+            except Exception as exc:
                 # The file couldn't be opened (eg. permissions)
+                log.debug( "config_open failed {fn!r} in mode {mode!r}: {exc}".format(
+                    fn=fn, mode=mode or 'r',
+                    exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
                 pass
 
 
