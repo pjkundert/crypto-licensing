@@ -32,6 +32,7 @@ import os
 import re
 import sys
 import time
+import traceback
 
 import pytz
 try:
@@ -314,7 +315,7 @@ class Duration( datetime.timedelta ):
         return self.total_seconds()
 
     def __int__( self ):
-        return int( self.total_seconds() )
+        return int( float( self ))
 
 
 def parse_seconds( seconds ):
@@ -600,9 +601,6 @@ class Timestamp( datetime.datetime ):
         if rhs.total_seconds():
             return Timestamp( super( Timestamp, self ).__sub__( rhs ), tzinfo=self.tzinfo )
         return self
-
-
-Timespan = collections.namedtuple( 'Timespan', ('start', 'length') )
 
 
 def config_paths( filename, extra=None ):

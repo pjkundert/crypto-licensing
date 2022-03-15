@@ -50,6 +50,7 @@ entry_points			= {
 }
 
 install_requires		= open( os.path.join( HERE, "requirements.txt" )).readlines()
+
 tests_require			= open( os.path.join( HERE, "requirements-tests.txt" )).readlines()
 extras_require			= {
     option: open( os.path.join( HERE, "requirements-{}.txt".format( option ))).readlines()

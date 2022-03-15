@@ -37,7 +37,7 @@ from .defaults		import (
 )
 from ..misc		import (
     type_str_base, urlencode,
-    parse_datetime, parse_seconds, Timestamp, Duration, Timespan,
+    parse_datetime, parse_seconds, Timestamp, Duration,
     deduce_name, config_open, config_open_deduced,
 )
 
@@ -509,10 +509,12 @@ class IssueRequest( Serializable ):
 
 
 def overlap_intersect( start, length, other ):
-    """Accepts a start/length, and either a License or a Timespan (something w/ start and length), and
-    compute the intersecting start/length, and its begin and (if known) ended timestamps.
+    """Accepts a start/length, and a Timespan (something w/ start and length), and compute the
+    intersecting start/length, and its begin and (if known) ended timestamps.
     
         start,length,begun,ended = overlap_intersect( start, length, other )
+
+    A start/Timespan w/ None for length is assumed to endure from its start with no time limit.
 
     """
     # Detect the situation where there is no computable overlap, and start, length is defined by one
@@ -627,22 +629,89 @@ class Agent( Serializable ):
         return p_binary
 
 
+class Timespan( Serializable ):
+    """A time period, optionally w/ a start and/or a length."""
+    __slots__			= (
+        'start', 'length',
+    )
+    serializers			= dict(
+        start		= into_str_UTC,
+        length		= into_str,
+    )
+
+    def __init__( self,
+        start		= None,
+        length		= None
+    ):
+        """A License usually has a timespan of start timestamp and duration length.  These cannot
+        exceed the timespan of any License dependencies.  First, get any supplied start time as a
+        timestamp, and any duration length as a number of seconds.
+
+        """
+        self.start		= into_timestamp( start )
+        self.length		= into_duration( length )
+
+
+class Grant( Serializable ):
+    """Capabilities granted by a License, perhaps for a certain 'timespan' on a certain 'machine'
+    UUIDv4, 'of' some (optional) key/value capabilities.
+
+    """
+    __slots__			= (
+        'timespan', 'machine', 'option',
+    )
+    serializers			= dict(
+        machine		= lambda m: m if type( m ) is bool else into_str( m ),
+    )
+
+    def __init__( self,
+        timespan	= None,
+        machine		= None,
+        option		= None ):
+        if isinstance( timespan, type_str_base ):
+            timespan		= json.loads( author )
+        self.timespan		= Timespan( **timespan ) if timespan else None
+        self.machine		= into_UUIDv4( machine ) if isinstance( machine, type_str_base ) else machine
+        if isinstance( option, type_str_base ):
+            option		= json.loads( option )
+        self.option		= dict( option ) if option else None
+
+
 class License( Serializable ):
     """Represents the details of a Licence from an author to a client (could be any client, if no
-    client_pubkey provided).  Cannot be constructed unless the supplied License details are valid
-    with respect to any supplied License dependencies.
+    client or client.pubkey provided).  Cannot be constructed unless the supplied License details
+    are valid with respect to the License dependencies it 'has', and grants capabilities 'for'
+    certain machine, period or other "keys".
+
 
     {
-        "author": "Dominion Research & Development Corp.",
-        "author_domain": "dominionrnd.com",
-        "author_service": "cpppo",
-        "client": "Awesome Inc.",
-        "client_pubkey": "...",
-        "dependencies": None,
-        "product": "Cpppo",
-        "length": "1y",
-        "machine": None,
-        "start": "2021-01-01 00:00:00+00:00")
+        "author": {
+           "domain":"dominionrnd.com",
+           "name":"Dominion Research & Development Corp.",
+           "product":"Cpppo Test",
+           "pubkey":"qZERnjDZZTmnDNNJg90AcUJZ+LYKIWO9t0jz/AzwNsk="
+        }
+        "client":{
+            "name":"Awesome, Inc.",
+            "pubkey":"cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ="
+        },
+        "has":[
+            {
+                "license":{...},
+                "signature":"9Dba....kLCg=="
+            },
+            ...
+        ],
+        "grant":{
+            "timespan":{
+                "start": "2021-01-01 00:00:00+00:00"
+                "length": "1y"
+            },
+            "machine":"00010203-0405-4607-8809-0a0b0c0d0e0f"
+            "option":{
+                "Hz":1000,
+            }
+        }
     }
 
     Verifying a License
@@ -705,8 +774,7 @@ class License( Serializable ):
         'author',
         'client',
         'dependencies',
-        'start', 'length',
-        'machine',
+        'grant',
     )
     serializers			= dict(
         start		= into_str_UTC,
@@ -714,14 +782,24 @@ class License( Serializable ):
         machine		= into_str,
     )
 
+    @property
+    def start( self ):
+        return self.grant and self.grant.timespan and self.grant.timespan.start
+
+    @property
+    def length( self ):
+        return self.grant and self.grant.timespan and self.grant.timespan.length
+
+    @property
+    def machine( self ):
+        return self.grant and self.grant.machine
+
     def __init__(
         self,
         author,
         client		= None,
-        dependencies	= None,				# Any sub-Licenses
-        start		= None,
-        length		= None,				# License may not be perpetual
-        machine		= None,				# A specific host may be specified
+        dependencies	= None,				# Any Licenses this License depends on
+        grant		= None,				# The timespan, machine and options granted
         machine_id_path	= None,
         confirm		= None,				# Validate License' author_pubkey from DNS
     ):
@@ -731,29 +809,24 @@ class License( Serializable ):
             "Issuing a Licence without an author is incorrect"
         if isinstance( author, type_str_base ):
             author		= json.loads( author )	# Deserialize Agent, if necessary
-        self.author	= Agent( **author )
+        self.author		= Agent( **author )
+
         if isinstance( client, type_str_base ):
             client		= json.loads( client )	# Deserialize Agent, if necessary
-        self.client	= Agent( **client ) if client else None
+        self.client		= Agent( **client ) if client else None
+
+        try:
+            if isinstance( grant, type_str_base ):
+                grant		= json.loads( grant )
+            self.grant		= Grant( **grant ) if grant else None
+        except Exception as exc:
+            raise LicenseIncompatibility( "License grant invalid: {exc}".format( exc=exc ))
 
         # Reconstitute LicenseSigned provenance from any dicts provided
         self.dependencies	= None if dependencies is None else list(
             LicenseSigned( confirm=confirm, machine_id_path=machine_id_path, **prov ) if isinstance( prov, dict ) else prov
             for prov in dependencies
         )
-
-        # A License usually has a timespan of start timestamp and duration length.  These cannot
-        # exceed the timespan of any License dependencies.  First, get any supplied start time as a
-        # cpppo.history.timestamp, and any duration length as a number of seconds.
-        try:
-            self.start		= into_timestamp( start )
-            self.length		= into_duration( length )
-        except Exception as exc:
-            raise LicenseIncompatibility(
-                    "License start: {start!r} or length: {length!r} invalid: {exc}".format(
-                        start=start, length=length, exc=exc ))
-
-        self.machine		= into_UUIDv4( machine )
 
         # Only allow the construction of valid Licenses
         self.verify( confirm=confirm, machine_id_path=machine_id_path )
@@ -766,7 +839,8 @@ class License( Serializable ):
         attributes (eg. we're applying further Timespan constraints to this License).
 
         """
-        start, length		= self.start, self.length
+        start			= self.grant and self.grant.timespan and self.grant.timespan.start
+        length			= self.grant and self.grant.timespan and self.grant.timespan.length
         for other in others:
             # If we determine a 0-length overlap, we have failed.
             start, length, begun, ended \
@@ -889,9 +963,14 @@ class License( Serializable ):
             # representing any supplied start/length constraints in order to validate their
             # consistency with the sub-License start/lengths.
             others		= list( ls.license for ls in ( self.dependencies or [] ))
-            start_cons		= into_timestamp( constraints.get( 'start' ))
-            length_cons		= into_duration( constraints.get( 'length' ))
-            others.append( Timespan( start_cons, length_cons ))
+            # Find any non-empty timespan w/ non-empty start/length in constraints
+            timespan_cons	= constraints.get( 'timespan' )
+            if timespan_cons:
+                if isinstance( timespan_cons, type_str_base ):
+                    timespan_cons = json.loads( timespan_cons )
+            # At this point, only iff timespan_cons is Truthy, has there been a timespan constraint specified
+            if timespan_cons:
+                others.append( Timespan( **timespan_cons ))
             start, length	= self.overlap( *others )
         except LicenseIncompatibility as exc:
             raise LicenseIncompatibility(
@@ -901,11 +980,14 @@ class License( Serializable ):
                     exc		= exc,
                 ))
         else:
-            # Finally, if either start or length constraints were supplied, update them both with
-            # the computed timespan of start/length constraints overlapped with all dependencies.
-            if ( start_cons or length_cons ) and start_cons:
-                constraints['start'] = into_str_UTC( start )
-                constraints['length'] = into_str( length )
+            # Finally, if a timespan constraint w/ either start or length was supplied, update it
+            # with the computed timespan of start/length constraints overlapped with all
+            # dependencies.  For example, we might get only a timespan.length constraint; this
+            # would use produce the earliest overlapping timespan.start of all dependency Licenses,
+            # with a duration of the supplied length.
+            if timespan_cons:  # Iff a timespan constraint was specified...
+                constraints.setdefault( 'grant', {} )
+                constraints['grant']['timespan'] = Timespan( start, length )
 
         # TODO: Implement License expiration date, to allow a software deployment to time out and
         # refuse to run after a License as expired, forcing the software owner to obtain a new
@@ -945,7 +1027,8 @@ class License( Serializable ):
             # the caller desires a machine-agnostic sub-License), default to constrain the License to
             # this machine.
             if machine_cons is not None:
-                constraints['machine'] = machine_uuid
+                constraints.setdefault( 'grant', {} )
+                constraints['grant']['machine'] = machine_uuid
 
         log.info( "License for {auth}'s {prod!r} is valid from {start} for {length} on machine {machine}".format(
             auth	= self.author.name,
@@ -1305,10 +1388,10 @@ def issue(
     with any License dependencies).
 
     Generally, a license may be issued if it is more "specific" (less general) than any License
-    dependencies.  For example, a License could specify that it can be used on *any* 1 installation.
-    The holder of the license may then issue a License specifying a certain computer and
-    installation path.  The software then confirms successfully that the License is allocated to
-    *this* computer, and that the software is installed at the specified location.
+    dependencies.  For example, a License could specify that it can be used on *any* 1
+    installation.  The holder of the license may then issue a License specifying a the machine ID
+    of a certain computer.  The software then confirms successfully that the License is allocated
+    to *this* computer.
 
     Of course, this is all administrative; any sufficiently dedicated programmer can simply remove
     the License checks from the software.  However, such people are *not* Clients: they are simply
@@ -1330,11 +1413,12 @@ def verify(
     signature		= None,
     confirm		= None,
     machine_id_path	= None,
+    dependencies	= True,
     **constraints
 ):
     """Verify that the supplied License or LicenseSigned contains a valid signature, and that the
-    License follows the rules in all of its License dependencies.  Optionally, confirm the validity
-    of any public keys.
+    License follows the rules in all of its License dependencies.  Optionally, 'confirm' the
+    validity of any public keys.
 
     Apply any additional constraints, returning a License serialization dict satisfying them.  If
     you plan to issue a new LicenseSigned, it is recommended to include your author, author_domain
@@ -1343,8 +1427,8 @@ def verify(
 
     Works with either a License and signature= keyword parameter, or a LicenseSigned provenance.
 
-    Always demands that any LicenseSigned dependencies are included in the resultant remaining
-    constraints; so that a sub-License can be produced.
+    Defaults to demands that any LicenseSigned dependencies are included in the resultant remaining
+    constraints, so that a sub-License can be produced.
 
     """
     return provenance.verify(
@@ -1352,7 +1436,7 @@ def verify(
         signature	= signature or provenance.signature,
         confirm		= confirm,
         machine_id_path	= machine_id_path,
-        dependencies	= True,
+        dependencies	= dependencies,
         **constraints )
 
     

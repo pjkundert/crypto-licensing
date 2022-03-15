@@ -23,14 +23,22 @@
                         "name":"Awesome, Inc.",
                         "pubkey":"cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ="
                     },
-                    "length":"1y",
-                    "start":"2021-09-30 17:22:33 UTC"
+                    "grant":{
+                        "timespan":{
+                            "length":"1y",
+                            "start":"2021-09-30 17:22:33 UTC"
+                        }
+                    }
                 },
-                "signature":"9DbaJRrEm9krviJfhhPkFoH/LtN1uYG48xA/4CTe4ZcXQOhCfnc/HhpcO0kR1t5EzWt27U7SBYr2IwVpHAkLCg=="
+                "signature":"G7BJOgc3BNB4stMhFOOzaykcz89KlcCFXibJo+kjhbAWCW+7bbhM937PWxD157O+5MxP59r0qNXxWJN4ujKSAQ=="
             }
         ],
-        "length":"1y",
-        "start":"2022-09-29 17:22:33 UTC"
+        "grant":{
+            "timespan":{
+                "length":"1y",
+                "start":"2022-09-29 17:22:33 UTC"
+            }
+        }
     },
-    "signature":"KKMNf9Ds9uJYIrwBoFRjP3F1vt8d1bp7jYWlM0kn+hkMoJViI9BvMY923MjwgV9iMhYbiC6hfD3s28ULVK2KDA=="
+    "signature":"UGKTU7zFceUI1+VewqabvV5Hfms6ynOlMp/wBEHXdA79FjpWCg35DeLfeBvg04k6k5+kwiGo2Vu+5dQb+Uv6Dg=="
 }
