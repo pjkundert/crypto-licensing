@@ -245,7 +245,7 @@ def into_timestamp( ts ):
         if isinstance( ts, datetime.datetime ):
             ts			= Timestamp( ts )
         assert isinstance( ts, Timestamp )
-        return ts
+    return ts
 
 
 def into_duration( dur ):
@@ -255,7 +255,27 @@ def into_duration( dur ):
             dur			= parse_seconds( dur )
             assert isinstance( dur, (int, float) )
             dur			= Duration( dur )
-        return dur
+    return dur
+
+
+def into_Timespan( tspan ):
+    """Convert to a Timespan, retaining None"""
+    if tspan is not None:
+        if not isinstance( tspan, Timespan ):
+            if isinstance( tspan, type_str_base ):
+                tspan		= json.dumps( tspan )
+            tspan		= Timespan( **dict( tspan ))
+    return tspan
+
+
+def into_Grant( grant ):
+    """Convert to a Grant, retaining None.  An empty Grant won't be included in serialize."""
+    if grant is not None:
+        if not isinstance( grant, Grant ):
+            if isinstance( grant, type_str_base ):
+                grant		= json.loads( grant )
+            grant		= Grant( **dict( grant ))
+    return grant
 
 
 def into_UUIDv4( machine ):
@@ -342,8 +362,8 @@ def domainkey( product, domain, service=None, pubkey=None ):
 
 class Serializable( object ):
     """A base-class that provides a deterministic Unicode JSON serialization of every __slots__
-    attribute, and a consistent dict representation of the same serialized data.  Access attributes
-    directly to obtain underlying types.
+    and/or __dict__ attribute, and a consistent dict representation of the same serialized data.
+    Access attributes directly to obtain underlying types.
 
     Uses __slots__ in derived classes to identify serialized attributes; traverses the class
     hierarchy's MRO to identify all attributes to serialize.  Output serialization is always in
@@ -355,23 +375,63 @@ class Serializable( object ):
         serializers		= dict( special = into_hex )
 
     It is expected that derived class' constructors will deserialize when presented with keywords
-    representing all __slots__.
+    representing all keys.
 
     """
 
     __slots__			= ()
     serializers			= {}
 
-    def keys( self, every=False ):
-        """Yields the Serializable object's relevant keys.  For many uses (eg. conversion to dict), the
-        default behaviour of ignoring keys with values of None is appropriate.  However, if you want
-        all keys regardless of content, specify every=True.
+    def vars( self ):
+        """Returns all key/value pairs defined for the object, either from __slots__ and/or __dict__."""
+        for cls in type( self ).__mro__:
+            try:
+                vars_seq	= tuple( cls.__slots__ )  # Having a key defined but not instantiated isn't valid.
+                if '__dict__' in vars_seq:
+                    vars_seq   += tuple( self.__dict__ )
+            except AttributeError:
+                try:
+                    vars_seq	= self.__dict__
+                except AttributeError:
+                    vars_seq	= ()
+                    if cls is not object:  # Only the base object() is allowed to have neither __slots__ nor __dict__
+                        log.error( "vars for base {cls!r} instance {self!r} has neither __slots__ nor __dict__: {exc}".format(
+                            cls=cls, self=self,
+                            exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
+                        raise
+            for key in vars_seq:
+                yield key, getattr( self, key )
+
+    def __copy__( self ):
+        """Create a new object by copying an existing object, taking __slots__ into account.
 
         """
-        for cls in type( self ).__mro__:
-            for key in getattr( cls, '__slots__', []):
-                if every or getattr( self, key ) is not None: # If the key is empty, don't include it
-                    yield key
+        result			= self.__class__.__new__( self.__class__ )
+
+        for key,val in self.vars():
+            setattr( result, key, copy.copy( val ))
+
+        return result
+
+    def keys( self, every=False ):
+        """Yields the Serializable object's relevant (not absent/None/.empty()) keys.
+
+        For many uses (eg. conversion to dict), the default behaviour of ignoring keys with values
+        of None (or a Truthy .empty() method) is appropriate.  However, if you want all keys
+        regardless of content, specify every=True.
+
+        """
+        def isnt_empty( val ):
+            if val is None:
+                return False
+            empty		= getattr( val, 'empty', None )
+            if empty is not None and hasattr( empty, '__call__' ) and empty():
+                return False
+            return True
+
+        for key,val in self.vars():
+            if every or isnt_empty( val ):
+                yield key
 
     def serializer( self, key ):
         """Finds any custom serialization formatter specified for the given attribute, defaults to None.
@@ -401,6 +461,10 @@ class Serializable( object ):
     def __str__( self ):
         return self.serialize( indent=4, encoding=None ) # remains as UTF-8 text
 
+    def JSON( self, indent=None, default=None ):
+        """Return the default JSON representation of the present (default: entire self) object."""
+        return into_JSON( self, indent=indent, default=default )
+
     def serialize( self, indent=None, encoding='UTF-8', default=None ):
         """Return a binary 'bytes' serialization of the present object.  Serialize to JSON, assuming any
         complex sub-objects (eg. License, LicenseSigned) have a sensible dict representation.
@@ -412,7 +476,7 @@ class Serializable( object ):
         them (eg. str).
 
         """
-        stream			= into_JSON( self, indent=indent, default=default )
+        stream			= self.JSON( indent=indent, default=default )
         if encoding:
             stream		= stream.encode( encoding )
         return stream
@@ -467,18 +531,6 @@ class Serializable( object ):
 
     def b64digest( self ):
         return self.digest( 'base64', 'ASCII' )
-
-    def __copy__( self ):
-        """Create a new object by copying an existing object, taking __slots__ into account.
-
-        """
-        result			= self.__class__.__new__( self.__class__ )
-
-        for cls in type( self ).__mro__:
-            for key in getattr( cls, '__slots__', [] ):
-                setattr( result, key, copy.copy( getattr( self, key )))
-
-        return result
 
 
 class IssueRequest( Serializable ):
@@ -653,19 +705,47 @@ class Timespan( Serializable ):
 
 
 class Grant( Serializable ):
-    """Capabilities granted by a License, perhaps for a certain 'timespan' on a certain 'machine'
-    UUIDv4, w/ some 'option' key/value capabilities.
+    """The option key/value capabilities granted by a License.  The first level names (typically
+    something related to the product name) must only specify a dict of key/value pairs, and all
+    must be serializable to JSON.
+
+    The Granted option names cannot be trusted; any License may carry a Grant of any option name
+    whatsoever.  So, the License itself must be validated as being issued by an expected author,
+    before its Grant of options can be trusted.
+
+    Also, some License options granted in sub-Licenses may "accumulate", while others only accrue
+    to the direct client of the License.  Each License author must decide this; only their code
+    that validates their License knows the semantics of their Grant options.
+
+    We'll use a dynamic __dict__ instead of __slots__ to hold the unknown option key/dict pairs.
 
     """
-    __slots__			= (
-        'option',
-    )
+    def __init__( self, *args, **kwds ):
+        if args:
+            assert len( args ) == 1 and isinstance( args[0], type_str_base ) and not grant, \
+                "Grant option cannot be defined w/ multiple or non-str args both args: {args!r} and/or kwds: {kwds!r}".format(
+                    args=args, kwds=kwds
+                )
+            kwds		= json.loads( args[0] )
+        option			= dict( kwds )
+        # Ensure that options only has first-level keys w/ /dicts
+        assert all(
+            hasattr( v, 'keys' ) and hasattr( v, '__getitem__' )
+            for v in option.values()
+        ), "Found non-dict Grant option(s): {keys}".format(
+            keys		= ', '.join(
+                k for k,v in option.items()
+                if not ( hasattr( v, 'keys' ) and hasattr( v, '__getitem__' ))
+            )
+        )
+        self.__dict__.update( option )
 
-    def __init__( self,
-        option		= None ):
-        if isinstance( option, type_str_base ):
-            option		= json.loads( option )
-        self.option		= dict( option ) if option else None
+    def empty( self ):
+        """Detects if empty, and avoid serialization if so.  This allows someone to accidentally define an
+        empty Grant, without changing the signature vs. the same License w/ no Grant.
+
+        """
+        return not bool( self.__dict__ )
 
 
 class License( Serializable ):
@@ -808,22 +888,25 @@ class License( Serializable ):
 
         self.machine		= into_UUIDv4( machine )  # None or machine UUIDv4 (raw or serialized)
 
-        if isinstance( timespan, type_str_base ):
-            timespan		= json.loads( author )
-        self.timespan		= Timespan( **timespan ) if timespan else None
+        try:
+            self.timespan	= into_Timespan( timespan )
+        except Exception as exc:
+            raise LicenseIncompatibility( "License timespan invalid: {exc}".format( exc=exc ))
 
         try:
-            if isinstance( grant, type_str_base ):
-                grant		= json.loads( grant )
-            self.grant		= Grant( **grant ) if grant else None
+            self.grant		= into_Grant( grant )
         except Exception as exc:
             raise LicenseIncompatibility( "License grant invalid: {exc}".format( exc=exc ))
 
         # Reconstitute LicenseSigned provenance from any dicts provided
-        self.dependencies	= None if dependencies is None else list(
-            LicenseSigned( confirm=confirm, machine_id_path=machine_id_path, **prov ) if isinstance( prov, dict ) else prov
-            for prov in dependencies
-        )
+        self.dependencies	= None
+        if dependencies is not None:
+            self.dependencies	= list(
+                prov
+                if isinstance( prov, LicenseSigned )
+                else LicenseSigned( confirm=confirm, machine_id_path=machine_id_path, **dict( prov ))
+                for prov in dependencies
+            )
 
         # Only allow the construction of valid Licenses
         self.verify( confirm=confirm, machine_id_path=machine_id_path )

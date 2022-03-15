@@ -50,20 +50,26 @@ def test_Timespan():
 }"""
     assert float(timespan.length) == 694861.001
 
+
 def test_Grant():
     grant			= Grant(
-        option		= dict( Hz=1000 )
+        cpppo_test	= dict(
+            Hz		= 1000,
+        )
     )
+    assert tuple( grant.vars() ) == (('cpppo_test', {'Hz': 1000}), )
+    assert tuple( grant.keys() ) == ('cpppo_test', )
+    #assert not grant.empty()
     grant_str			= str( grant )
     #print( grant_str )
     assert str(grant) == """\
 {
-    "option":{
+    "cpppo_test":{
         "Hz":1000
     }
 }"""
-
-
+    assert grant.JSON() == '{"cpppo_test":{"Hz":1000}}'
+    #assert Grant().empty()
 
 def test_License_domainkey():
     """Ensure we can handle arbitrary UTF-8 domains, and compute the proper DKIM1 RR path"""
@@ -401,11 +407,11 @@ def test_LicenseSigned():
         confirm		= False,  # There is no "Awesome, Inc." or awesome-inc.com ...
     )
     drv_prov = issue( drv, awesome_keypair.sk, confirm=False )
-    assert drv_prov.b64digest() == 'RTJWBCZefmYYbese4//tNmqDEaPrvMj3iqsu8lNLxLo='
     drv_prov_str = str( drv_prov )
     # This is a license used in other tests; saved to verification_test.crypto-license and
     # licensing_test/licensing.sql.licenses.
-    #print(drv_prov_str)
+    print(drv_prov_str)
+    assert drv_prov.b64digest() == 'RTJWBCZefmYYbese4//tNmqDEaPrvMj3iqsu8lNLxLo='
     assert drv_prov_str == """\
 {
     "license":{
@@ -765,10 +771,73 @@ def test_licensing_authorize( tmp_path ):
             ],
             constraints	= dict(
                 machine	= True,
+                grant	= dict(
+                    ethernet_ip_tool = dict(
+                        nodes	= 10,
+                    ),
+                ),
             ),
         )
     )
     assert len( checked ) == 1
+    assert into_JSON( list(checked.values())[0], indent=4 ) == """\
+{
+    "license":{
+        "author":{
+            "name":"End User, LLC",
+            "pubkey":"O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik="
+        },
+        "dependencies":[
+            {
+                "license":{
+                    "author":{
+                        "domain":"awesome-inc.com",
+                        "name":"Awesome, Inc.",
+                        "product":"EtherNet/IP Tool",
+                        "pubkey":"cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ="
+                    },
+                    "client":{
+                        "name":"End User, LLC",
+                        "pubkey":"O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik="
+                    },
+                    "dependencies":[
+                        {
+                            "license":{
+                                "author":{
+                                    "domain":"dominionrnd.com",
+                                    "name":"Dominion Research & Development Corp.",
+                                    "product":"Cpppo Test",
+                                    "pubkey":"qZERnjDZZTmnDNNJg90AcUJZ+LYKIWO9t0jz/AzwNsk="
+                                },
+                                "client":{
+                                    "name":"Awesome, Inc.",
+                                    "pubkey":"cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ="
+                                },
+                                "timespan":{
+                                    "length":"1y",
+                                    "start":"2021-09-30 17:22:33 UTC"
+                                }
+                            },
+                            "signature":"tr2OcE1pT0tg7i+rotQJmFG8dIf8GhLtmBYxYDIshIRGKkmvAbCpuDgBKg8V0xUyaqh7OCCvlKRvvyqOEbD5DQ=="
+                        }
+                    ],
+                    "timespan":{
+                        "length":"1y",
+                        "start":"2022-09-29 17:22:33 UTC"
+                    }
+                },
+                "signature":"NXRCa4r81zywf2Ad5SZlH3bx9yA8mBQ69RQUOqYzJW9cfN1qWnLSevV7OOnQ/jbwaejghOBRZZoy3P+oX69mBQ=="
+            }
+        ],
+        "grant":{
+            "ethernet_ip_tool":{
+                "nodes":10
+            }
+        },
+        "machine":"00010203-0405-4607-8809-0a0b0c0d0e0f"
+    },
+    "signature":"w+Yor0GJM5v0wCTwl58frLJ81/eFzsC2k9bVrJb6Qq+it1QNaxX9taOEJf3jo8zPbMaDmltuJw09Iu/w/rqICw=="
+}"""
 
     print( "Changing CWD to {}".format( tmp_path ))
     os.chdir( str( tmp_path ))

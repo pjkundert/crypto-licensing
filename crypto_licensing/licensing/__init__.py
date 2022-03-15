@@ -22,7 +22,7 @@ __copyright__                   = "Copyright (c) 2022, Dominion Research & Devel
 __license__                     = "Dual License: GPLv3 (or later) and Commercial (see LICENSE)"
 
 __all__				= [
-    'Serializable', 'LicenseIncompatibility', 'License', 'LicenseSigned',
+    'Serializable', 'LicenseIncompatibility', 'License', 'LicenseSigned', 'Agent',
     'domainkey', 'author', 'issue', 'verify', 'load', 'load_keys',
     'check', 'authorize',
     'KeypairEncrypted', 'KeypairPlaintext',
