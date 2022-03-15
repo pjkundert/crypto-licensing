@@ -244,8 +244,14 @@ def licenses( confirm=None, stored=None ):
     # serialized forms.
     found			= 0
     for r in stored or []:
-        prov			= licensing.LicenseSigned(
-            license=r.license, signature=r.signature, confirm=confirm, machine_id_path=False )
+        try:
+            prov		= licensing.LicenseSigned(
+                license=r.license, signature=r.signature, confirm=confirm, machine_id_path=False )
+        except Exception as exc:
+            log.debug( "Failed to load stored License provenance: {exc} from: {lic}".format(
+                exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc,
+                lic=r.license ))
+            raise
         for sig, lic in emit( prov ):
             yield sig, lic
             found	       += 1

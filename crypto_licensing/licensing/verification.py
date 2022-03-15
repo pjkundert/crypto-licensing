@@ -654,24 +654,15 @@ class Timespan( Serializable ):
 
 class Grant( Serializable ):
     """Capabilities granted by a License, perhaps for a certain 'timespan' on a certain 'machine'
-    UUIDv4, 'of' some (optional) key/value capabilities.
+    UUIDv4, w/ some 'option' key/value capabilities.
 
     """
     __slots__			= (
-        'timespan', 'machine', 'option',
-    )
-    serializers			= dict(
-        machine		= lambda m: m if type( m ) is bool else into_str( m ),
+        'option',
     )
 
     def __init__( self,
-        timespan	= None,
-        machine		= None,
         option		= None ):
-        if isinstance( timespan, type_str_base ):
-            timespan		= json.loads( author )
-        self.timespan		= Timespan( **timespan ) if timespan else None
-        self.machine		= into_UUIDv4( machine ) if isinstance( machine, type_str_base ) else machine
         if isinstance( option, type_str_base ):
             option		= json.loads( option )
         self.option		= dict( option ) if option else None
@@ -774,6 +765,8 @@ class License( Serializable ):
         'author',
         'client',
         'dependencies',
+        'machine',
+        'timespan',
         'grant',
     )
     serializers			= dict(
@@ -784,21 +777,19 @@ class License( Serializable ):
 
     @property
     def start( self ):
-        return self.grant and self.grant.timespan and self.grant.timespan.start
+        return self.timespan and self.timespan.start
 
     @property
     def length( self ):
-        return self.grant and self.grant.timespan and self.grant.timespan.length
-
-    @property
-    def machine( self ):
-        return self.grant and self.grant.machine
+        return self.timespan and self.timespan.length
 
     def __init__(
         self,
         author,
         client		= None,
         dependencies	= None,				# Any Licenses this License depends on
+        machine		= None,
+        timespan	= None,
         grant		= None,				# The timespan, machine and options granted
         machine_id_path	= None,
         confirm		= None,				# Validate License' author_pubkey from DNS
@@ -814,6 +805,12 @@ class License( Serializable ):
         if isinstance( client, type_str_base ):
             client		= json.loads( client )	# Deserialize Agent, if necessary
         self.client		= Agent( **client ) if client else None
+
+        self.machine		= into_UUIDv4( machine )  # None or machine UUIDv4 (raw or serialized)
+
+        if isinstance( timespan, type_str_base ):
+            timespan		= json.loads( author )
+        self.timespan		= Timespan( **timespan ) if timespan else None
 
         try:
             if isinstance( grant, type_str_base ):
@@ -839,8 +836,8 @@ class License( Serializable ):
         attributes (eg. we're applying further Timespan constraints to this License).
 
         """
-        start			= self.grant and self.grant.timespan and self.grant.timespan.start
-        length			= self.grant and self.grant.timespan and self.grant.timespan.length
+        start			= self.start
+        length			= self.length
         for other in others:
             # If we determine a 0-length overlap, we have failed.
             start, length, begun, ended \
@@ -914,7 +911,7 @@ class License( Serializable ):
                     "License for {auth}'s {prod!r}: signature mismatch: {sig!r}; {exc}".format(
                         auth	= self.author.name,
                         prod	= self.author.product,
-                        sig	= signature,
+                        sig	= into_b64( signature ),
                         exc	= exc,
                     ))
 
@@ -986,8 +983,7 @@ class License( Serializable ):
             # would use produce the earliest overlapping timespan.start of all dependency Licenses,
             # with a duration of the supplied length.
             if timespan_cons:  # Iff a timespan constraint was specified...
-                constraints.setdefault( 'grant', {} )
-                constraints['grant']['timespan'] = Timespan( start, length )
+                constraints['timespan'] = Timespan( start, length )
 
         # TODO: Implement License expiration date, to allow a software deployment to time out and
         # refuse to run after a License as expired, forcing the software owner to obtain a new
@@ -1027,8 +1023,7 @@ class License( Serializable ):
             # the caller desires a machine-agnostic sub-License), default to constrain the License to
             # this machine.
             if machine_cons is not None:
-                constraints.setdefault( 'grant', {} )
-                constraints['grant']['machine'] = machine_uuid
+                constraints['machine'] = machine_uuid
 
         log.info( "License for {auth}'s {prod!r} is valid from {start} for {length} on machine {machine}".format(
             auth	= self.author.name,

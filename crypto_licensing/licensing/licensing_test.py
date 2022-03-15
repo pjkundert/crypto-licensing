@@ -110,7 +110,7 @@ def licensing_cli( number, tests=None, address=None ):
     log.detail( "Client number={}; response: {}".format( number, reprlib.repr( response )))
     data			= json.loads( response )
     #print( data )
-    assert data['list'] and data['list'][0]['signature'] == 'xnSfp/GDWsAvxVqarn+7AG8l0TIlSXD5kdHzb0sRxZsrm7o3uYLbPNxkcgvLV62m9V7BhKCU0unaMweSWX8TCA=='
+    assert data['list'] and data['list'][0]['signature'] == 'pN3libfAJ/OUV2vDr0bqC36WGEiB2k5SVZ9djN8MKaoGlEcM5IKS0Lxjuy2TFp9dgFtot/ku1hy9wOnpOC8DCw=='
     log.info( "Client number={}; done".format( number ))
 
 

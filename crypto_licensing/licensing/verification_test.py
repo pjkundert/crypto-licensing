@@ -52,21 +52,14 @@ def test_Timespan():
 
 def test_Grant():
     grant			= Grant(
-        timespan	= dict( start='2021-01-01 00:00:00 Canada/Pacific', length='1w1d1h1m1s1ms' ),
-        machine		= "00010203-0405-4607-8809-0a0b0c0d0e0f",
         option		= dict( Hz=1000 )
     )
     grant_str			= str( grant )
     #print( grant_str )
     assert str(grant) == """\
 {
-    "machine":"00010203-0405-4607-8809-0a0b0c0d0e0f",
     "option":{
         "Hz":1000
-    },
-    "timespan":{
-        "length":"1w1d1h1m1.001s",
-        "start":"2021-01-01 08:00:00 UTC"
     }
 }"""
 
@@ -169,11 +162,11 @@ def test_KeypairEncrypted_smoke():
     assert kp_a.into_keypair( username=username, password=password )[1] == awesome_keypair[1]
 
     kp_a_ser			= str( kp_a )
-    assert """\
+    assert kp_a_ser == """\
 {
     "ciphertext":"aea5129b033c3072be503b91957dbac0e4c672ab49bb1cc981a8955ec01dc47280effc21092403509086caa8684003c7",
     "salt":"010101010101010101010101"
-}""" == kp_a_ser
+}"""
 
 
 @pytest.mark.skipif( not chacha20poly1305, reason="Needs ChaCha20Poly1305" )
@@ -216,12 +209,10 @@ def test_License_base():
                 name	= "Dominion Research & Development Corp.",
                 product	= "Cpppo Test",
             ),
-            grant	= dict(
-                timespan = dict( 
-                    start	= "2021-09-30 11:22:33 Canada/Mountain",
-                    length	= "1y"
-                )
-            )
+            timespan = dict( 
+                start	= "2021-09-30 11:22:33 Canada/Mountain",
+                length	= "1y"
+            ),
         )
     except DNSException as exc:
         # No DNS; OK, let the test pass anyway.
@@ -234,13 +225,12 @@ def test_License_base():
                 product	= "Cpppo Test",
                 pubkey	= dominion_sigkey[32:],
             ),
-            grant	= dict(
-                timespan = dict( 
-                    start	= "2021-09-30 11:22:33 Canada/Mountain",
-                    length	= "1y"
-                )
+            timespan = dict( 
+                start	= "2021-09-30 11:22:33 Canada/Mountain",
+                length	= "1y"
             ),
-            confirm	= confirm )
+            confirm	= confirm,
+        )
 
     lic_str = str( lic )
     #print( lic_str )
@@ -252,23 +242,21 @@ def test_License_base():
         "product":"Cpppo Test",
         "pubkey":"qZERnjDZZTmnDNNJg90AcUJZ+LYKIWO9t0jz/AzwNsk="
     },
-    "grant":{
-        "timespan":{
-            "length":"1y",
-            "start":"2021-09-30 17:22:33 UTC"
-        }
+    "timespan":{
+        "length":"1y",
+        "start":"2021-09-30 17:22:33 UTC"
     }
 }"""
-    lic_digest_b64 = 'L8OYHjQTj8/BWJ0PtmdIwPFNHFdiccZ2nVKngVNYqOo='
-    assert lic_digest_b64 == lic.digest('base64', 'ASCII' )
-    if lic_digest_b64 == lic.digest('base64', 'ASCII' ):
+    lic_digest_b64 = 'YycfaBSQH0YpY5g1X1HHYAurQFUzvzHWBQWfFk8MgNo='
+    assert lic.digest('base64', 'ASCII' ) == lic_digest_b64
+    if lic.digest('base64', 'ASCII' ) ==  lic_digest_b64:
         #print( repr( lic.digest() ))
-        assert b'/\xc3\x98\x1e4\x13\x8f\xcf\xc1X\x9d\x0f\xb6gH\xc0\xf1M\x1cWbq\xc6v\x9dR\xa7\x81SX\xa8\xea' == lic.digest()
-        assert '2fc3981e34138fcfc1589d0fb66748c0f14d1c576271c6769d52a7815358a8ea' == lic.digest('hex', 'ASCII' )
+        assert lic.digest() == b"c'\x1fh\x14\x90\x1fF)c\x985_Q\xc7`\x0b\xab@U3\xbf1\xd6\x05\x05\x9f\x16O\x0c\x80\xda"
+        assert lic.digest('hex', 'ASCII' ) == '63271f6814901f46296398355f51c7600bab405533bf31d605059f164f0c80da'
 
     keypair = ed25519.crypto_sign_keypair( dominion_sigkey[:32] )
     assert keypair.sk == dominion_sigkey
-    assert b'\xa9\x91\x11\x9e0\xd9e9\xa7\x0c\xd3I\x83\xdd\x00qBY\xf8\xb6\n!c\xbd\xb7H\xf3\xfc\x0c\xf06\xc9' == lic.author.pubkey
+    assert lic.author.pubkey == b'\xa9\x91\x11\x9e0\xd9e9\xa7\x0c\xd3I\x83\xdd\x00qBY\xf8\xb6\n!c\xbd\xb7H\xf3\xfc\x0c\xf06\xc9'
     assert codecs.getencoder( 'base64' )( keypair.vk ) == (b'qZERnjDZZTmnDNNJg90AcUJZ+LYKIWO9t0jz/AzwNsk=\n', 32)
     prov = LicenseSigned( lic, keypair.sk, confirm=confirm )
 
@@ -278,7 +266,7 @@ def test_License_base():
 
     prov_str = str( prov )
     #print( prov_str )
-    assert """\
+    assert  prov_str == """\
 {
     "license":{
         "author":{
@@ -287,23 +275,21 @@ def test_License_base():
             "product":"Cpppo Test",
             "pubkey":"qZERnjDZZTmnDNNJg90AcUJZ+LYKIWO9t0jz/AzwNsk="
         },
-        "grant":{
-            "timespan":{
-                "length":"1y",
-                "start":"2021-09-30 17:22:33 UTC"
-            }
+        "timespan":{
+            "length":"1y",
+            "start":"2021-09-30 17:22:33 UTC"
         }
     },
-    "signature":"P7KDDhl7QDaV1OtFD1wxRtZ2o8nPux7gR2sGtvKjbscdYWJWhM11X3dkUZDEGi9k3zT9b4540cfqFzVz2EXFDw=="
-}""" ==  prov_str
+    "signature":"NF2v602UTFix78R4VO96lktZVFRGcU7PeTmRAdblUxNWtfLGBX/jfHw7ZYrvEa+QGq6amgV4eRPRJO8XXFK8Dw=="
+}"""
 
     # Multiple licenses, some of which truncate the duration of the initial License. Non-timezone
     # timestamps are assumed to be UTC.  These are fake domains, so no confirm.
     start, length = lic.overlap(
         License( author = dict( name="A", product='a', domain='a-inc.com', pubkey=keypair.vk ), confirm=False,
-                 grant=dict( timespan=Timespan( "2021-09-29 00:00:00",  "1w" ))),
+                 timespan=Timespan( "2021-09-29 00:00:00",  "1w" )),
         License( author = dict( name="B", product='b', domain='b-inc.com', pubkey=keypair.vk ), confirm=False,
-                 grant=dict( timespan=Timespan( "2021-09-30 00:00:00", "1w" ))))
+                 timespan=Timespan( "2021-09-30 00:00:00", "1w" )))
 
     # Default rendering of a timestamp is w/ milliseconds, and no tz info for UTC
     assert str( start ) == "2021-09-30 11:22:33.000 Canada/Mountain"
@@ -314,9 +300,9 @@ def test_License_base():
     with pytest.raises( LicenseIncompatibility ) as exc_info:
         start, length = lic.overlap(
             License( author = dict( name="A", product='a', domain='a-inc.com', pubkey=keypair.vk ), confirm=False,
-                     grant=dict( timespan=Timespan( "2021-09-29 00:00:00", "1w" ))),
+                     timespan=Timespan( "2021-09-29 00:00:00", "1w" )),
             License( author = dict( name="B", product='b', domain='b-inc.com', pubkey=keypair.vk ), confirm=False,
-                     grant=dict( timespan=Timespan( "2021-10-07 00:00:00", length = "1w" ))))
+                     timespan=Timespan( "2021-10-07 00:00:00", length = "1w" )))
     assert str( exc_info.value ).endswith(
         "License for B's 'b' from 2021-10-06 18:00:00 Canada/Mountain for 1w incompatible with others" )
 
@@ -347,9 +333,7 @@ def test_LicenseSigned():
                     name	= "Awesome, Inc.",
                     pubkey	= awesome_pubkey
                 ),
-                grant	= dict(
-                    timespan	= Timespan( "2021-09-30 11:22:33 Canada/Mountain", "1y" ),
-                )
+                timespan	= Timespan( "2021-09-30 11:22:33 Canada/Mountain", "1y" ),
             )
         assert str( exc_info.value ).endswith(
             """License for Dominion Research & Development Corp.'s 'Cpppo Test': author key from DKIM qZERnjDZZTmnDNNJg90AcUJZ+LYKIWO9t0jz/AzwNsk= != cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ=""" )
@@ -364,9 +348,7 @@ def test_LicenseSigned():
                 name	= "Awesome, Inc.",
                 pubkey	= awesome_pubkey,
             ),
-            grant	= dict(
-                timespan= Timespan( "2021-09-30 11:22:33 Canada/Mountain", "1y" ),
-            )
+            timespan	= Timespan( "2021-09-30 11:22:33 Canada/Mountain", "1y" ),
         )
     except DNSException as exc:
         # No DNS; OK, let the test pass anyway (and indicate to future tests to not confirm)
@@ -383,9 +365,7 @@ def test_LicenseSigned():
                 name	= "Awesome, Inc.",
                 pubkey	= awesome_pubkey,
             ),
-            grant	= dict(
-                timespan= Timespan( "2021-09-30 11:22:33 Canada/Mountain", "1y" ),
-            ),
+            timespan	= Timespan( "2021-09-30 11:22:33 Canada/Mountain", "1y" ),
             confirm	= confirm,
         )
 
@@ -417,17 +397,16 @@ def test_LicenseSigned():
             pubkey	= enduser_pubkey
         ),
         dependencies	= [ lic_prov ],
-        grant		= dict(
-            timespan= Timespan( "2022-09-29 11:22:33 Canada/Mountain", "1y" ),
-        ),
+        timespan	= Timespan( "2022-09-29 11:22:33 Canada/Mountain", "1y" ),
         confirm		= False,  # There is no "Awesome, Inc." or awesome-inc.com ...
     )
     drv_prov = issue( drv, awesome_keypair.sk, confirm=False )
-    assert 'tTCX0oxHIRn6L0D1cntR36/o6k2mda0XiJg/jDI6vwM=' == drv_prov.b64digest()
+    assert drv_prov.b64digest() == 'RTJWBCZefmYYbese4//tNmqDEaPrvMj3iqsu8lNLxLo='
     drv_prov_str = str( drv_prov )
-    # This is a license used in other tests; saved to verification_test.crypto-license...
+    # This is a license used in other tests; saved to verification_test.crypto-license and
+    # licensing_test/licensing.sql.licenses.
     #print(drv_prov_str)
-    assert """\
+    assert drv_prov_str == """\
 {
     "license":{
         "author":{
@@ -453,25 +432,21 @@ def test_LicenseSigned():
                         "name":"Awesome, Inc.",
                         "pubkey":"cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ="
                     },
-                    "grant":{
-                        "timespan":{
-                            "length":"1y",
-                            "start":"2021-09-30 17:22:33 UTC"
-                        }
+                    "timespan":{
+                        "length":"1y",
+                        "start":"2021-09-30 17:22:33 UTC"
                     }
                 },
-                "signature":"G7BJOgc3BNB4stMhFOOzaykcz89KlcCFXibJo+kjhbAWCW+7bbhM937PWxD157O+5MxP59r0qNXxWJN4ujKSAQ=="
+                "signature":"tr2OcE1pT0tg7i+rotQJmFG8dIf8GhLtmBYxYDIshIRGKkmvAbCpuDgBKg8V0xUyaqh7OCCvlKRvvyqOEbD5DQ=="
             }
         ],
-        "grant":{
-            "timespan":{
-                "length":"1y",
-                "start":"2022-09-29 17:22:33 UTC"
-            }
+        "timespan":{
+            "length":"1y",
+            "start":"2022-09-29 17:22:33 UTC"
         }
     },
-    "signature":"UGKTU7zFceUI1+VewqabvV5Hfms6ynOlMp/wBEHXdA79FjpWCg35DeLfeBvg04k6k5+kwiGo2Vu+5dQb+Uv6Dg=="
-}""" == drv_prov_str
+    "signature":"NXRCa4r81zywf2Ad5SZlH3bx9yA8mBQ69RQUOqYzJW9cfN1qWnLSevV7OOnQ/jbwaejghOBRZZoy3P+oX69mBQ=="
+}"""
 
     # Test the cpppo.crypto.licensing API, as used in applications.  A LicenseSigned is saved to an
     # <application>.crypto-license file in the Application's configuration directory path.  The
@@ -489,14 +464,12 @@ def test_LicenseSigned():
     # Lets specialize the license for a specific machine, and with a specific start time
     lic_host_dict		= verify(
         drv_prov, confirm=False, machine_id_path=machine_id_path,
-        grant=dict(
-            machine	= True,
-            timespan	= Timespan( "2022-09-28 08:00:00 Canada/Mountain" )
-        ),
+        machine	= True,
+        timespan	= Timespan( "2022-09-28 08:00:00 Canada/Mountain" ),
     )
     lic_host_dict_str = into_JSON( lic_host_dict, indent=4, default=str )
     print( lic_host_dict_str )
-    assert """\
+    assert lic_host_dict_str == """\
 {
     "dependencies":[
         {
@@ -524,33 +497,28 @@ def test_LicenseSigned():
                                 "name":"Awesome, Inc.",
                                 "pubkey":"cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ="
                             },
-                            "grant":{
-                                "timespan":{
-                                    "length":"1y",
-                                    "start":"2021-09-30 17:22:33 UTC"
-                                }
+                            "timespan":{
+                                "length":"1y",
+                                "start":"2021-09-30 17:22:33 UTC"
                             }
                         },
-                        "signature":"G7BJOgc3BNB4stMhFOOzaykcz89KlcCFXibJo+kjhbAWCW+7bbhM937PWxD157O+5MxP59r0qNXxWJN4ujKSAQ=="
+                        "signature":"tr2OcE1pT0tg7i+rotQJmFG8dIf8GhLtmBYxYDIshIRGKkmvAbCpuDgBKg8V0xUyaqh7OCCvlKRvvyqOEbD5DQ=="
                     }
                 ],
-                "grant":{
-                    "timespan":{
-                        "length":"1y",
-                        "start":"2022-09-29 17:22:33 UTC"
-                    }
+                "timespan":{
+                    "length":"1y",
+                    "start":"2022-09-29 17:22:33 UTC"
                 }
             },
-            "signature":"UGKTU7zFceUI1+VewqabvV5Hfms6ynOlMp/wBEHXdA79FjpWCg35DeLfeBvg04k6k5+kwiGo2Vu+5dQb+Uv6Dg=="
+            "signature":"NXRCa4r81zywf2Ad5SZlH3bx9yA8mBQ69RQUOqYzJW9cfN1qWnLSevV7OOnQ/jbwaejghOBRZZoy3P+oX69mBQ=="
         }
     ],
-    "grant":{
-        "machine":true,
-        "timespan":{
-            "start":"2022-09-28 14:00:00 UTC"
-        }
+    "machine":"00010203-0405-4607-8809-0a0b0c0d0e0f",
+    "timespan":{
+        "length":"1d6h",
+        "start":"2022-09-29 17:22:33 UTC"
     }
-}""" == lic_host_dict_str
+}"""
 
     lic_host			= License(
         author	= dict(
@@ -565,7 +533,7 @@ def test_LicenseSigned():
     lic_host_prov = issue( lic_host, enduser_keypair, confirm=False, machine_id_path=machine_id_path )
     lic_host_str = str( lic_host_prov )
     #print( lic_host_str )
-    assert """\
+    assert lic_host_str == """\
 {
     "license":{
         "author":{
@@ -599,35 +567,30 @@ def test_LicenseSigned():
                                     "name":"Awesome, Inc.",
                                     "pubkey":"cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ="
                                 },
-                                "grant":{
-                                    "timespan":{
-                                        "length":"1y",
-                                        "start":"2021-09-30 17:22:33 UTC"
-                                    }
+                                "timespan":{
+                                    "length":"1y",
+                                    "start":"2021-09-30 17:22:33 UTC"
                                 }
                             },
-                            "signature":"G7BJOgc3BNB4stMhFOOzaykcz89KlcCFXibJo+kjhbAWCW+7bbhM937PWxD157O+5MxP59r0qNXxWJN4ujKSAQ=="
+                            "signature":"tr2OcE1pT0tg7i+rotQJmFG8dIf8GhLtmBYxYDIshIRGKkmvAbCpuDgBKg8V0xUyaqh7OCCvlKRvvyqOEbD5DQ=="
                         }
                     ],
-                    "grant":{
-                        "timespan":{
-                            "length":"1y",
-                            "start":"2022-09-29 17:22:33 UTC"
-                        }
+                    "timespan":{
+                        "length":"1y",
+                        "start":"2022-09-29 17:22:33 UTC"
                     }
                 },
-                "signature":"UGKTU7zFceUI1+VewqabvV5Hfms6ynOlMp/wBEHXdA79FjpWCg35DeLfeBvg04k6k5+kwiGo2Vu+5dQb+Uv6Dg=="
+                "signature":"NXRCa4r81zywf2Ad5SZlH3bx9yA8mBQ69RQUOqYzJW9cfN1qWnLSevV7OOnQ/jbwaejghOBRZZoy3P+oX69mBQ=="
             }
         ],
-        "grant":{
-            "machine":true,
-            "timespan":{
-                "start":"2022-09-28 14:00:00 UTC"
-            }
+        "machine":"00010203-0405-4607-8809-0a0b0c0d0e0f",
+        "timespan":{
+            "length":"1d6h",
+            "start":"2022-09-29 17:22:33 UTC"
         }
     },
-    "signature":"90nLEB10mvMSOoOu08bYJMmiXDyMh0PoP5HuPHmjTSZvrD+/+zH2bhU8MKqTBUKFnGtR8iV3PemoLAqy0UA+DQ=="
-}""" == lic_host_str
+    "signature":"hd4/vmsWK6yJc6v+X6reYWz6Q1rblGQe3Y6VLP9d1UoxsEfmfBxc8D4RIg3FH2upodgIJRx5IFc6mUBgYUrqAw=="
+}"""
 
 
 def test_licensing_check():
@@ -653,7 +616,7 @@ def test_licensing_check():
     assert len( checked ) == 1
     checked_str		= into_JSON( checked, indent=4, default=str )
     #print( checked_str )
-    assert """\
+    assert checked_str == """\
 {
     "O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik=":{
         "license":{
@@ -687,34 +650,30 @@ def test_licensing_check():
                                         "name":"Awesome, Inc.",
                                         "pubkey":"cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ="
                                     },
-                                    "grant":{
-                                        "timespan":{
-                                            "length":"1y",
-                                            "start":"2021-09-30 17:22:33 UTC"
-                                        }
+                                    "timespan":{
+                                        "length":"1y",
+                                        "start":"2021-09-30 17:22:33 UTC"
                                     }
                                 },
-                                "signature":"G7BJOgc3BNB4stMhFOOzaykcz89KlcCFXibJo+kjhbAWCW+7bbhM937PWxD157O+5MxP59r0qNXxWJN4ujKSAQ=="
+                                "signature":"tr2OcE1pT0tg7i+rotQJmFG8dIf8GhLtmBYxYDIshIRGKkmvAbCpuDgBKg8V0xUyaqh7OCCvlKRvvyqOEbD5DQ=="
                             }
                         ],
-                        "grant":{
-                            "timespan":{
-                                "length":"1y",
-                                "start":"2022-09-29 17:22:33 UTC"
-                            }
+                        "timespan":{
+                            "length":"1y",
+                            "start":"2022-09-29 17:22:33 UTC"
                         }
                     },
-                    "signature":"UGKTU7zFceUI1+VewqabvV5Hfms6ynOlMp/wBEHXdA79FjpWCg35DeLfeBvg04k6k5+kwiGo2Vu+5dQb+Uv6Dg=="
+                    "signature":"NXRCa4r81zywf2Ad5SZlH3bx9yA8mBQ69RQUOqYzJW9cfN1qWnLSevV7OOnQ/jbwaejghOBRZZoy3P+oX69mBQ=="
                 }
             ]
         },
-        "signature":"36tWRFmTnvP3Lc/excW5fqDHvTdnyzfM942Cve0axVxFmIOkqGE5H6+OPffP+LkMIOyREuropRTTkv53EQQEDw=="
+        "signature":"aGPcJUI+arV24ipAWfJJxTOhLGKMG51Vzob7mhldYme+qxU/amnUgPNUKY3iqnK7jbT7BbFIx4aywUGuh9p6BQ=="
     }
-}""" == checked_str
+}"""
 
     # Now, check that we can issue the license to our machine-id.  Since we don't specify a client,
     # any client Agent Keypair could sub-license this License, on that machine-id.
-    checked			= dict(
+    checked_mach		= dict(
         (into_b64( key.vk ), lic)
         for key,lic in check(
             filename=__file__, package=__package__,  # filename takes precedence
@@ -726,10 +685,10 @@ def test_licensing_check():
             )
         )
     )
-    assert len( checked ) == 1
-    checked_str		= into_JSON( checked, indent=4, default=str )
-    print( checked_str )
-    assert """\
+    assert len( checked_mach ) == 1
+    checked_mach_str	= into_JSON( checked_mach, indent=4, default=str )
+    print( checked_mach_str )
+    assert checked_mach_str == """\
 {
     "O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik=":{
         "license":{
@@ -763,33 +722,27 @@ def test_licensing_check():
                                         "name":"Awesome, Inc.",
                                         "pubkey":"cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ="
                                     },
-                                    "grant":{
-                                        "timespan":{
-                                            "length":"1y",
-                                            "start":"2021-09-30 17:22:33 UTC"
-                                        }
+                                    "timespan":{
+                                        "length":"1y",
+                                        "start":"2021-09-30 17:22:33 UTC"
                                     }
                                 },
-                                "signature":"G7BJOgc3BNB4stMhFOOzaykcz89KlcCFXibJo+kjhbAWCW+7bbhM937PWxD157O+5MxP59r0qNXxWJN4ujKSAQ=="
+                                "signature":"tr2OcE1pT0tg7i+rotQJmFG8dIf8GhLtmBYxYDIshIRGKkmvAbCpuDgBKg8V0xUyaqh7OCCvlKRvvyqOEbD5DQ=="
                             }
                         ],
-                        "grant":{
-                            "timespan":{
-                                "length":"1y",
-                                "start":"2022-09-29 17:22:33 UTC"
-                            }
+                        "timespan":{
+                            "length":"1y",
+                            "start":"2022-09-29 17:22:33 UTC"
                         }
                     },
-                    "signature":"UGKTU7zFceUI1+VewqabvV5Hfms6ynOlMp/wBEHXdA79FjpWCg35DeLfeBvg04k6k5+kwiGo2Vu+5dQb+Uv6Dg=="
+                    "signature":"NXRCa4r81zywf2Ad5SZlH3bx9yA8mBQ69RQUOqYzJW9cfN1qWnLSevV7OOnQ/jbwaejghOBRZZoy3P+oX69mBQ=="
                 }
             ],
-            "grant":{
-                "machine":true
-            }
+            "machine":"00010203-0405-4607-8809-0a0b0c0d0e0f"
         },
-        "signature":"/UlbZs9ZneR/6X7QeSUUUABFe+1NkDMDZVTxexAGB/PifxQw5EykteR1FqdoVXd3NPQjHAnaaWLsKoivzX35BA=="
+        "signature":"YZSrREYtzPR/O/12NaH6RcKRWToINaYF6ZN1nPgmT8Cc9y7r/18hssiXKqOcA963497u7DuhftcMYd1q1AQwAA=="
     }
-}""" == checked_str
+}"""
 
 
 def test_licensing_authorize( tmp_path ):
@@ -810,11 +763,9 @@ def test_licensing_authorize( tmp_path ):
             extra		= [
                 os.path.dirname( __file__ )  # This test's directory
             ],
-            constraints		= dict(
-                grant		= dict(
-                    machine	= True,
-                )
-            )
+            constraints	= dict(
+                machine	= True,
+            ),
         )
     )
     assert len( checked ) == 1
