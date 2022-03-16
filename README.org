@@ -29,5 +29,23 @@ paid in various cryptocurrencies.
 #+TOC: headlines 2
 
 * Confirmation using Ed25519 Signatures
+
+** Creating an Authoring Keypair
+
+   To begin authoring Licenses, you need to be able to sign them.  Create and save an encrypted
+   Ed25519 keypair.
+
+   #+LATEX: {\scriptsize
+   #+BEGIN_SRC ipython :session :exports both :results raw drawer
+   import crypto_licensing as cl
+
+   encr_keypair		= cl.KeypairEncrypted( username='admin@awesome-inc.com', password='password' ))
+
+   [
+       [ "seed", encr_keypair['seed'] ],
+   ]
+   #+END_SRC
+   #+LATEX: }
+
 * Payment with Cryptocurrencies
 * Issuance via Web API

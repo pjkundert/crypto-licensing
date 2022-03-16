@@ -1360,6 +1360,9 @@ class KeypairEncrypted( Serializable ):
     key.  The salt and ciphertext are always serialized in hex, to illustrate that it is not Ed25519
     Keypair data.
 
+    Can be supplied w/ a raw signing key or an ed25519.Keypair as an unencrypted key, along with
+    username/password.  If no signing key at all is provided, one will be generated.
+
     """
     __slots__			= ('salt', 'ciphertext')
     serializers			= dict(
@@ -1367,9 +1370,15 @@ class KeypairEncrypted( Serializable ):
         ciphertext	= into_hex,
     )
 
-    def __init__( self, salt=None, ciphertext=None, username=None, password=None, vk=None, sk=None ):
-        assert ( ciphertext and salt ) or ( sk and password and username ), \
+    def __init__( self, sk=None, vk=None, salt=None, ciphertext=None, username=None, password=None ):
+        assert bool( ciphertext and salt ) ^ bool( password and username ), \
             "Insufficient data to create an Encrypted Keypair"
+        if not ( ciphertext and salt ) and not sk:
+            sk			= author( why="No Keypair supplied to KeypairEncrypted" )
+        if isinstance( sk, ed25519.Keypair ):
+            # Provided with a raw ed25519.Keypair; extract its sk, and use any supplied vk for confirmation
+            _,edsk		= into_keys( sk )
+            sk			= into_b64( edsk )
         if salt:
             self.salt		= into_bytes( salt, ('hex',) )
         else:
