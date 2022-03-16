@@ -37,14 +37,30 @@ paid in various cryptocurrencies.
 
    #+LATEX: {\scriptsize
    #+BEGIN_SRC ipython :session :exports both :results raw drawer
-   import crypto_licensing as cl
-
-   encr_keypair		= cl.KeypairEncrypted( username='admin@awesome-inc.com', password='password' ))
-
-   [
-       [ "seed", encr_keypair['seed'] ],
-   ]
+     import crypto_licensing as cl
+     username		= 'admin@awesome-inc.com'
+     password		= 'password'
+     encr_keypair	= cl.KeypairEncrypted( username=username, password=password )
+     decr_keypair	= cl.KeypairPlaintext( encr_keypair.into_keypair( username=username, password=password ))
+     [
+	 [ "salt", encr_keypair['salt'] ],
+	 [ "ciphertext", encr_keypair['ciphertext'] ],
+	 [ "verifying key", decr_keypair['vk'] ],
+	 [ "signing key", decr_keypair['sk'] ],
+     ]
    #+END_SRC
+
+   #+RESULTS:
+   :results:
+   # Out[2]:
+   | 0             | 1                                                                                                |
+   |---------------+--------------------------------------------------------------------------------------------------|
+   | salt          | 02b7c9fae7c4ed836d253c51                                                                         |
+   | ciphertext    | 4a14806f492fc1d42de87104aee5a451dc7fba8a966f47de683c373e9f5bf2d123af54f954306c0b2bac881033ca7e0e |
+   | verifying key | 6Mc+SPr5DOLm1dNal8WtpewEmjqJLpQg/favvJDIbFc=                                                     |
+   | signing key   | yhzTgZ83q2yRJ8+7quHIvVGYX5AaOhpjP7HsjO8GOiroxz5I+vkM4ubV01qXxa2l7ASaOokulCD99q+8kMhsVw==         |
+   :end:
+
    #+LATEX: }
 
 * Payment with Cryptocurrencies

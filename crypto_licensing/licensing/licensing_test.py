@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import, print_function, division, unicode_literals
 try:
-    from future_builtins import zip, map # Use Python 3 "lazy" zip, map
+    from future_builtins import zip, map  # noqa: F401; Use Python 3 "lazy" zip, map
 except ImportError:
     pass
 
@@ -10,14 +10,11 @@ import logging
 import multiprocessing
 import os
 import pytest
-import time
 
-try: # Python2
+try:  # Python2
     from urllib2 import urlopen
-    from urllib import urlencode
-except ImportError: # Python3
+except ImportError:  # Python3
     from urllib.request import urlopen
-    from urllib.parse import urlencode
 
 from ..misc		import reprlib
 from ..			import licensing
@@ -34,14 +31,13 @@ except ImportError:
     web				= None
 try:
     from cpppo.server import network		# network.bench
-    from cpppo import dotdict			# multiprocessing.Manager().apidict
 except ImportError:
     network			= None
 try:
     import chacha20poly1305
 except ImportError:
     chacha20poly1305		= None
-    
+
 
 log				= logging.getLogger( "lic.svr")
 
@@ -58,16 +54,16 @@ licensing_cli_kwds		= {
     ],
 }
 
-CFGPATH				=  __file__[:-3] # trim off .py
+CFGPATH				=  __file__[:-3]  # trim off .py
 
 
 def test_licensing_issue_query():
     # Issue a license to this machine-id, for client "End User, LLC".
-    
+
     # TODO: XXX: These requests are signed, proving that they came from the holder of the client
     # signing key.  However, anyone who captures the request and the signature can ask for the same
     # License!  Then, if they forge the Machine ID, they can run the license on that machine.
-    # 
+    #
     # This is only possible if the channel can be examined; public License Servers should be served
     # over SSL protected channels.
     request			= licensing.IssueRequest(
@@ -132,7 +128,7 @@ def licensing_bench():
             # them to share it).  If *any* thread shuts down, they will all be stopped.
             server	= dict(
                 control		= m.apidict(
-                    1.0, # apidict timeout
+                    1.0,  # apidict timeout
                     done	= False
                 ),
             ),

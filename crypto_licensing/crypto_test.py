@@ -1,19 +1,17 @@
 
-# 
+#
 # Tests for the various compatible implementations of ed25519 signatures
 # From: https://ed25519.cr.yp.to/python/sign.py
 # License: Public Domain
 # Modified for compatibility with ed25519ll signature interface, and pytest
-# 
+#
 
 import binascii
 import logging
 import os
 import random
-import sys
 
 from .misc import timer
-from . import ed25519
 
 log				= logging.getLogger( "crypto_test" )
 
@@ -26,7 +24,7 @@ except Exception as exc:
 else:
     ed25519_mods.append( ("ed25519 (best available)", ed25519 ) )
 
-try: # Python package from Pypi or https://github.com/dholth/ed25519ll
+try:  # Python package from Pypi or https://github.com/dholth/ed25519ll
     import ed25519ll
     ed25519ll.crypto_sign
 except Exception as exc:
@@ -34,15 +32,15 @@ except Exception as exc:
 else:
     ed25519_mods.append( ("ed25519ll from Pypi", ed25519ll) )
 
-try: # The Python-only bindings from https://github.com/dholth/ed25519ll
+try:  # The Python-only bindings from https://github.com/dholth/ed25519ll
     from . import ed25519ll_pyonly
     ed25519ll_pyonly.crypto_sign
-except:
+except Exception as exc:
     log.warning( "Could not load .ed25519ll_pyonly: {exc}".format( exc=exc ))
 else:
     ed25519_mods.append( ("Python-only from dholth/ed25519ll", ed25519ll_pyonly) )
 
-try: # https://ed25519.cr.yp.to/python/ed25519.py (w/ Python3 udpates)
+try:  # https://ed25519.cr.yp.to/python/ed25519.py (w/ Python3 udpates)
     from . import ed25519_djb
     ed25519_djb.crypto_sign
 except Exception as exc:
@@ -65,23 +63,27 @@ assert 2 <= len(ed25519_mods) <= 4, \
 # sk includes pk at end
 # sm includes m at end
 
-try: # pragma nocover
+try:  # pragma nocover
     unicode
     PY3 = False
+
     def asints(s):
         """Convert a byte string to a sequence of ints"""
         return ( ord(c) for c in s )
+
     def asbytes(b):
         """Convert array of integers to byte string"""
         return ''.join(chr(x) for x in b)
+
     def joinbytes(b):
         """Convert array of bytes to byte string"""
         return ''.join(b)
-except NameError: # pragma nocover
+except NameError:  # pragma nocover
     PY3 = True
-    asints = lambda s: s
+    asints = lambda s: s  # noqa: E731
     asbytes = bytes
     joinbytes = bytes
+
 
 def test_ed25519():
     for description,ed in ed25519_mods:
@@ -90,7 +92,8 @@ def test_ed25519():
             beg = timer()
             cnt = 0
             for line in cases:
-                if not line: continue
+                if not line:
+                    continue
                 x		= line.split( ':' )
                 # 32-byte sk; x[0] includes 256-bit (32-byte) secret + public (verifying) keys
                 sk		= binascii.unhexlify( x[0] )[:32]
@@ -138,7 +141,7 @@ def test_ed25519():
                 end		= timer()
                 dur		= end - beg
                 if dur > 5.0:
-                  break
+                    break
 
             log.normal("\n{dsc}: Completed {cnt} signature checks in {dur}s, or {per:.5}/s".format(
-              dsc=description, cnt=cnt, dur=dur, per=cnt/dur ))
+                dsc=description, cnt=cnt, dur=dur, per=cnt/dur ))

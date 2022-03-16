@@ -23,56 +23,52 @@
 
 from __future__ import print_function, absolute_import, division
 
-__author__                      = "Perry Kundert"
-__email__                       = "perry@hardconsulting.com"
-__copyright__                   = "Copyright (c) 2022 Dominion Research & Development Corp."
-__license__                     = "Dual License: GPLv3 (or later) and Commercial (see LICENSE)"
-
-
 import argparse
-import collections
-import copy
-import curses, curses.ascii, curses.panel
-import datetime
+import curses, curses.ascii, curses.panel  # noqa: E401
 import fnmatch
-import glob
 import json
 import logging
-import math
 import os
 import posixpath
-import random
-import re
 import signal
-import socket
 import sqlite3
 import sys
-import textwrap
 import threading
 import time
-import timeit
 import traceback
-import uuid
 import warnings
 
-try: # Python2
-    from urllib2 import urlopen
-    from urllib import urlencode, unquote
-except ImportError: # Python3
-    from urllib.request import urlopen
-    from urllib.parse import urlencode, unquote
+try:  # Python2
+    from urllib import unquote
+except ImportError:  # Python3
+    from urllib.parse import unquote
 
 # Used for Web GUI, and for licensing database
 import web
 import web.httpserver
 import wsgilog
 
+from .defaults		import (
+    KEYPATTERN, LICPATTERN,
+)
+from ..misc		import (
+    timer, Timestamp,
+    log_cfg, log_levelmap, log_level,
+    config_paths, config_open, ConfigNotFoundError
+)
+from ..			import licensing
+
+__author__                      = "Perry Kundert"
+__email__                       = "perry@hardconsulting.com"
+__copyright__                   = "Copyright (c) 2022 Dominion Research & Development Corp."
+__license__                     = "Dual License: GPLv3 (or later) and Commercial (see LICENSE)"
+
 web.config.debug 		= False
 web.config.session_parameters.update( {
     'cookie_name':	'session',
     'ignore_expiry':	True,
     'ignore_change_ip':	True,
-    'timeout':		7*24*60*60,	# 1 week
+    'timeout':		7*24*60*60,     # 1 week
 } )
 
 session_initializer		= {
@@ -82,16 +78,6 @@ session_initializer		= {
     'login':	0,			# 0 guest, 1 user, 2 admin
 }
 
-from .defaults		import (
-    KEYPATTERN, LICPATTERN,
-)
-from ..misc		import (
-    timer, Timestamp, Duration,
-    type_str_base,    
-    log_cfg, log_levelmap, log_level,
-    config_paths, config_open, ConfigNotFoundError
-)
-from ..			import licensing
 
 log				= logging.getLogger( "licensing" )
 
@@ -100,14 +86,14 @@ LOGFILE				= "licensing.log"
 DB_FILE				= "licensing.db"
 ACCFILE				= "licensing.access"
 
-CRDFILE				= "licensing.credentials"	# Any author credentials available persistently
+CRDFILE				= "licensing.credentials"       # Any author credentials available persistently
 KEYFILE				= "licensing." + KEYPATTERN
 LICFILE				= "licensing." + LICPATTERN
 
 # SQL configurations are typically found in crypto_licensing/licensing, but may be customized and
 # placed in any of the Cpppo configuration file paths (eg. ~/.cpppo/, /etc/cpppo/, or the current
 # working directory)
-SQLFILE				= "licensing.sql" # this + .* are loaded
+SQLFILE				= "licensing.sql"		# this + .* are loaded
 
 OURPATH				= os.path.dirname( os.path.abspath( __file__ ))
 TPLPATH				= os.path.join( OURPATH, "static/resources/templates/" )
@@ -115,7 +101,7 @@ LOCPATH				= os.path.abspath(os.path.curdir)
 
 # License Server Configuration
 
-config_extras			= [OURPATH] # Any extra higher-priority configuration paths to look in
+config_extras			= [OURPATH]  # Any extra higher-priority configuration paths to look in
 
 
 # The database: global 'db', which is a web.database connection.  Also 'db_lock', since sqlite3 is
@@ -133,6 +119,7 @@ db_statics			= {}
 db_lock				= threading.Lock()
 db				= None
 
+
 def db_setup():
     """Set up application-global db, db_lock, ...  Should be done after config_extras is initialized."""
 
@@ -145,7 +132,7 @@ def db_setup():
         try:
             for f in config_open( DB_FILE ):
                 with f:
-                    db_file_path= f.name
+                    db_file_path = f.name
                 break
         except ConfigNotFoundError:
             pass
@@ -190,7 +177,7 @@ def db_setup():
 
 def db_state_save():
     """Dump out any persistent licensing data, etc. that should be loaded next time.  This should be done
-    from time to time, so we don't get too far behind, in case of a cold reboot.  Of course, save 
+    from time to time, so we don't get too far behind, in case of a cold reboot.  Of course, save
     immediately upon license creation, etc.
 
     Make certain that all sqlite3 database calls are run in a single Thread.  We'll do the loading
@@ -228,6 +215,7 @@ def licenses( confirm=None, stored=None ):
 
     """
     emitted			= set()
+
     def emit( *provs ):
         for p in provs:
             if p.signature in emitted:
@@ -316,7 +304,8 @@ def credentials( *add ):
         pass
     log.info( "Credentials loaded: {}".format( found ))
 
-credentials.local		= {} # { description: (username, password), ... }
+
+credentials.local		= {}  # { description: (username, password), ... }
 
 
 def keypairs():
@@ -337,7 +326,7 @@ def keypairs():
             cred		= dict( username=username, password=password )
             try:
                 keypair		= licensing.KeypairEncrypted( ciphertext=r.ciphertext, salt=r.salt )
-                keypair.into_keypair( **cred ) # Ensure the supplied credentials can decrypt it
+                keypair.into_keypair( **cred )  # Ensure the supplied credentials can decrypt it
                 yield r.name, keypair, cred
                 saved	       += 1
             except Exception as exc:
@@ -479,28 +468,33 @@ uptime_basis			= timer()
 uptime_signalled		= False
 shutdown_signalled		= False
 logrotate_signalled		= False
-levelmap_change			= 0 # may become +'ve/-'ve
+levelmap_change			= 0  # may become +'ve/-'ve
 
 
 def uptime_request( signum, frame ):
     global uptime_signalled
     uptime_signalled		= True
 
+
 def shutdown_request( signum, frame ):
     global shutdown_signalled
     shutdown_signalled		= True
+
 
 def logrotate_request( signum, frame ):
     global logrotate_signalled
     logrotate_signalled		= True
 
+
 def loglevelup_request( signum, frame ):
     global levelmap_change
     levelmap_change	       += 1
 
+
 def logleveldn_request( signum, frame ):
     global levelmap_change
     levelmap_change	       -= 1
+
 
 def signal_service():
     """Service known signals.  When logging, default to log at WARNING, but ensure the
@@ -553,15 +547,16 @@ signal.signal( signal.SIGUSR2, logleveldn_request )
 signal.signal( signal.SIGTERM, shutdown_request )
 signal.signal( signal.SIGURG,  uptime_request )
 
-
 now				= timer()
 
+
 def daytime( ts ):
-    return timestamp( ts )
+    return Timestamp( ts )
 
 #
 # Curses-based Textual UI.
 #
+
 
 def message( window, text, row = 23, col = 0, clear = True ):
     rows,cols			= window.getmaxyx()
@@ -574,7 +569,7 @@ def message( window, text, row = 23, col = 0, clear = True ):
         window.addstr( int( row ), int( col ), text[:cols-col] )
         if clear:
             window.clrtoeol()
-    except:
+    except Exception:
         pass
 
 
@@ -601,7 +596,6 @@ def txt( win, config ):
         threading.active_count(),
         ', '.join( [ t.name for t in threading.enumerate() ] )))
 
-
     display			= 'licenses'		# Start off displaying Licenses
     input			= 0
     delta			= 0.0
@@ -611,7 +605,6 @@ def txt( win, config ):
                  % (  daytime( now ), delta,
                       input, curses.ascii.isprint( input ) and chr( input ) or '?'),
                  row = 0, clear = False )
-
 
         curses.panel.update_panels()
         curses.doupdate()
@@ -634,38 +627,37 @@ def txt( win, config ):
             winsel		= curses.newwin( * pansiz( rows, cols ) + panloc( 0, rows, cols ))
             try:
                 pansel.replace( winsel )
-            except:
+            except Exception:
                 pansel		= curses.panel.new_panel( winsel )
-
 
         # Process input, adjusting parameters
         if 0 < input <= 255 and chr( input ) == 'q':
             config['control']['done'] = True
             return
 
-        if 0 < input <= 255 and chr( input ) == '\f': # FF, ^L
+        if 0 < input <= 255 and chr( input ) == '\f':			# FF, ^L
             # ^L -- clear screen
             winsel.clear()
 
         # Select next space, adjust target temp
-        if input == curses.ascii.SP:				# ' '
+        if input == curses.ascii.SP:					# ' '
             if pansel.hidden():
                 pansel.show()
             else:
                 pansel.hide()
 
-        if input in ( curses.ascii.STX, curses.KEY_LEFT, 260 ):	# ^b, <--
+        if input in ( curses.ascii.STX, curses.KEY_LEFT, 260 ):		# ^b, <--
             selected		= ( selected - 1 ) % len( include )
-        if input in ( curses.ascii.ACK, curses.KEY_RIGHT, 261 ):# ^f, -->
+        if input in ( curses.ascii.ACK, curses.KEY_RIGHT, 261 ):        # ^f, -->
             selected		= ( selected + 1 ) % len( include )
-        if input in ( curses.ascii.DLE, curses.KEY_UP, 259 ):	# ^p, ^
-            if include[selected] == 'world':			#     |
+        if input in ( curses.ascii.DLE, curses.KEY_UP, 259 ):		# ^, ^p
+            if include[selected] == 'world':				# |
                 # do something to world...
                 pass
             else:
                 curses.beep()
-        if input in ( curses.ascii.SO, curses.KEY_DOWN, 258 ):	#     |
-            if include[selected] == 'world':			# ^n, v
+        if input in ( curses.ascii.SO, curses.KEY_DOWN, 258 ):		# |
+            if include[selected] == 'world':				# v, ^n
                 pass
             else:
                 curses.beep()
@@ -683,7 +675,6 @@ def txt( win, config ):
         last			= real
         now                     = real
 
-
         # Next frame of animation
         win.erase()
 
@@ -699,10 +690,12 @@ def txt( win, config ):
             areas		= len( include )
             across		= 1
             rank		= 1
+
             def cellyx():
                 y		= ( rows - topmargin ) // rank
                 x		= cols // across
                 return y,x
+
             height,width	= cellyx()
             while width > 60:
                 across	       += 1
@@ -711,10 +704,9 @@ def txt( win, config ):
                 rank	       += 1
                 height,width	= cellyx()
             assert height >= 10 and width >= 30
-        except:
+        except Exception:
             message( win, "Insufficient screen size (%d areas, %d ranks of %d  %dx%d cells); increase height/width, or reduce font size" % (
-                areas, rank, across, width, height ),
-                     col = 0, row = 0 )
+                areas, rank, across, width, height ), col = 0, row = 0 )
             win.refresh()
             time.sleep( 2 )
             continue
@@ -726,18 +718,21 @@ def txt( win, config ):
         for c in range( width, cols, width):
             win.vline( topmargin, c, curses.ACS_VLINE, rows - topmargin )
 
-
         # Update
         winsel.erase()
         wsrows, wscols		= winsel.getmaxyx()
 
         r			= 2
-        try:   winsel.hline( r, 1, curses.ACS_HLINE, wscols - 2 )
-        except: pass
+        try:
+            winsel.hline( r, 1, curses.ACS_HLINE, wscols - 2 )
+        except Exception:
+            pass
         r                      += 1
 
-        try:    winsel.hline( r, 1, curses.ACS_HLINE, wscols - 2 )
-        except: pass
+        try:
+            winsel.hline( r, 1, curses.ACS_HLINE, wscols - 2 )
+        except Exception:
+            pass
         r                      += 1
 
         winsel.border( 0 )
@@ -813,14 +808,14 @@ def http_exception( framework, status, message ):
             return framework.NotFound( message )
 
         if status == 406:
-            return framework.NotAcceptable() # Will not accept a message
+            return framework.NotAcceptable()			# Will not accept a message
 
     return Exception( "%d %s" % ( status, message ))
 
 
 def licenses_request( render, path, environ, accept, framework,
                          queries=None, posted=None,
-                         session=None, logged=None, # The user session
+                         session=None, logged=None,		# The user session
                          proxy=None ):
 
     """
@@ -854,13 +849,13 @@ def licenses_request( render, path, environ, accept, framework,
         response		= render.keylist( data )
     else:
         raise http_exception( framework, 406, "Unable to produce %s content" % (
-                content or accept or "unknown" ))
+            content or accept or "unknown" ))
     return content, response
 
 
 def credentials_request( render, path, environ, accept, framework,
                          queries=None, posted=None,
-                         session=None, logged=None, # The user session
+                         session=None, logged=None,		# The user session
                          proxy=None ):
 
     """
@@ -887,13 +882,13 @@ def credentials_request( render, path, environ, accept, framework,
         response		= render.keylist( data )
     else:
         raise http_exception( framework, 406, "Unable to produce %s content" % (
-                content or accept or "unknown" ))
+            content or accept or "unknown" ))
     return content, response
 
 
 def keypairs_request( render, path, environ, accept, framework,
                          queries=None, posted=None,
-                         session=None, logged=None, # The user session
+                         session=None, logged=None,		# The user session
                          proxy=None ):
 
     """
@@ -919,7 +914,7 @@ def keypairs_request( render, path, environ, accept, framework,
         response		= render.keylist( data )
     else:
         raise http_exception( framework, 406, "Unable to produce %s content" % (
-                content or accept or "unknown" ))
+            content or accept or "unknown" ))
     return content, response
 
 
@@ -958,22 +953,22 @@ def issue_request( render, path, environ, accept, framework,
 
     variables			= queries or posted or {}
 
-    # Full specifications of desired License.  Must include client_pubkey.  
+    # Full specifications of desired License.  Must include client_pubkey.
     confirm			= licensing.into_boolean( variables.get( 'confirm', False ), truthy=('',) )
     author			= variables.get( 'author' )
     author_pubkey		= variables.get( 'author_pubkey' )
     product			= variables.get( 'product' )
     client			= variables.get( 'client' )
-    client_pubkey		= variables.get( 'client_pubkey' ) # Must sign the issue request
+    client_pubkey		= variables.get( 'client_pubkey' )		# Must sign the issue request
     machine			= variables.get( 'machine' )
     signature			= variables.get( 'signature' )
-    number			= variables.get( 'number' ) # optional client-supplied serialization
+    number			= variables.get( 'number' )			# optional client-supplied serialization
 
     # TODO: verify the signature is that of the original canonicalized, serialized IssueRequest payload
-    # 
+    #
     #     ...?author=Blah,%20Inc&client_pubkey=...&machine=00010203-...0e0f&signature=9Dba...Cg==
     #         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    # 
+    #
     # We must serialize the request in a standard way in the sender and the receiver, because the
     # data may be sent as URL arguments or POST header variables.
     issue_request		= licensing.IssueRequest(
@@ -997,7 +992,6 @@ def issue_request( render, path, environ, accept, framework,
         'product':	lambda lic: issue_request['product'] and lic.author['product'] != issue_request['product'],
         'machine':	lambda lic: issue_request['machine'] and lic['machine'] != issue_request['machine'],
     }
-
 
     def prov_to_issue():
         """Produce a LicenseSigned suitable for the client to receive, use as a dependency of a new
@@ -1032,7 +1026,7 @@ def issue_request( render, path, environ, accept, framework,
             log.warning( "Failed: {exc}".format( exc=exc ))
             pass
         else:
-            if lic.client and lic.machine: # Exact match, with specific client and machine
+            if lic.client and lic.machine:  # Exact match, with specific client and machine
                 log.warning( "Issue request number={number}; Reissuing existing License: {lic}".format(
                     number=number, lic=lic if log.isEnabledFor( logging.INFO ) else licensing.into_b64( sig )))
                 return licensing.LicenseSigned(
@@ -1117,12 +1111,9 @@ def issue_request( render, path, environ, accept, framework,
         response		= render.keylist( data )
     else:
         raise http_exception( framework, 406, "Unable to produce %s content" % (
-                content or accept or "unknown" ))
+            content or accept or "unknown" ))
     log.info("Issue request number={number}; done".format( number=number ))
     return content, response
-
-
-
 
 
 def inline( filename ):
@@ -1294,8 +1285,7 @@ Disallow: /
                     login	= web.input().get( "login", 1 )
                     assert 0 <= int( login ) <= 2, "Invalid login Disable(0)/Normal(1)/Admin(2)"
                     pin		= web.input().get( "pin" )
-                    zones	= " ".join( z for z in session.zones.split()
-                                            if z in web.input() )
+
                     update	= None
                     if logged( admin=True ):
                         # If the current user is an admin user, we can alter an existing user
@@ -1315,26 +1305,22 @@ Disallow: /
                             log.info( "Updating user: %r" % ( name ))
                             kwds		= {}
                             kwds["login"]	= login
-                            if zones: # Update zones, if supplied
-                                kwds["zones"]	= zones
-                            if pin: # Update pin too, if supplied
+                            if pin:    # Update pin too, if supplied
                                 kwds["pin"]	= pin
                             with db_lock:
-                                update= db.update( 'users', where='user_id = $user_id',
-                                                   vars={ "user_id": target }, **kwds )
+                                update = db.update( 'users', where='user_id = $user_id',
+                                                    vars={ "user_id": target }, **kwds )
                             assert update, "Update failed"
                     if not update:
                         # Existing user not found and updated; insert a new one
                         assert pin, "Empty PIN"
-                        assert zones, "No zones delegated"
                         log.info( "Adding User: %r" % ( name ))
                         with db_lock:
                             insert = db.insert( 'users',
                                                 creator=session.user_id,
                                                 name=name.lower(),
                                                 pin=pin,
-                                                login=login,
-                                                zones=zones )
+                                                login=login )
                         assert insert, "Insert failed"
                 except Exception as exc:
                     log.info( "Add/Update user failure: %s: %s" % ( exc, traceback.format_exc() ))
@@ -1432,7 +1418,6 @@ Disallow: /
                 web.header( "Content-Type", "text/html" )
                 return response
 
-
             # Post via "go" button (or via event on PIN input); attempt to login
             ident		= None
             error		= None
@@ -1524,18 +1509,14 @@ Disallow: /
             # form data posted in web.input(), just like queries
             return self.GET( path, input_variable="posted" )
 
-
     class api_licenses( tabular_request_base ):
         request			= licenses_request
-
 
     class api_credentials( tabular_request_base ):
         request			= credentials_request
 
-
     class api_keypairs( tabular_request_base ):
         request			= keypairs_request
-
 
     class StaticAppDir( web.httpserver.StaticApp, object ):
         """Implement our own version of StaticApp and StaticMiddleware so we can return proper caching
@@ -1564,7 +1545,7 @@ Disallow: /
             path = posixpath.normpath(unquote(path))
             words = path.split('/')
             words = filter(None, words)
-            path = self.directory # << D'oh!
+            path = self.directory  # << D'oh!
             for word in words:
                 if os.path.dirname(word) or word in (os.curdir, os.pardir):
                     # Ignore components that are not a simple file/directory name
@@ -1574,8 +1555,8 @@ Disallow: /
                 path += '/'
             return path
 
-
     cache_max_age		= 30*24*60*60
+
     class StaticMiddlewareDir( web.httpserver.StaticMiddleware, object ):
         """WSGI middleware for serving static files from the specified basedir."""
         def __init__( self, app, prefix="/static/", basedir=os.getcwd() ):
@@ -1593,7 +1574,6 @@ Disallow: /
             else:
                 return self.app( environ, start_response )
 
-
     class LogMiddlewareCF( web.httpserver.LogMiddleware, object ):
         def log( self, status, environ ):
             cf_ip		= environ.get( 'HTTP_CF_CONNECTING_IP' )
@@ -1610,7 +1590,6 @@ Disallow: /
             if cf_country:
                 environ['REMOTE_PORT'] = cf_country
             return super( LogMiddlewareCF, self ).log( status, environ )
-
 
     # Get the required web.py classes from the local namespace.  The iface:port must always passed
     # on argv[1] to use app.run(), so use lower-level web.httpserver.runsimple interface.  This sets
@@ -1633,7 +1612,6 @@ Disallow: /
         """Implement the missing flush API to avoid warnings"""
         def flush(self):
             pass
-
 
     class Log( wsgilog.WsgiLog, object ):
         """Direct log messages to the correct log file, including stdout/stderr.  Because we're running
@@ -1673,7 +1651,7 @@ Disallow: /
 
     func			= app.wsgifunc( Log )
     func			= StaticMiddlewareDir( func, "/static/", os.path.dirname( __file__ ))
-    func			= LogMiddlewareCF( func ) # web.httpserver.LogMiddleware( app )
+    func			= LogMiddlewareCF( func )       # web.httpserver.LogMiddleware( app )
 
     # webpy.server		= web.httpserver.WSGIServer( config['address'], app )
 
@@ -1681,6 +1659,7 @@ Disallow: /
     # bound web server address (eg. if using a dynamically allocated port).  This will be redirected
     # to the access logfile, unless disabled via --no-access.  Also, this class weirdly captures config, so we can update
     from cheroot import wsgi
+
     class Server( wsgi.Server, object ):
         def serve( self ):
             sockname		= self.socket.getsockname()
@@ -1709,6 +1688,7 @@ Disallow: /
         webpy.server		= None
         logging.warning( "Web Interface Thread exiting" )
 
+
 # To stop the server externally, hit webpy.server.stop
 webpy.server			= None
 
@@ -1718,18 +1698,19 @@ def txtgui( config ):
     failure			= None
     try:        # Initialize curses
         stdscr			= curses.initscr()
-        curses.noecho();
-        curses.cbreak();
+        curses.noecho()
+        curses.cbreak()
         curses.halfdelay( 1 )
         stdscr.keypad( 1 )
 
         txt( stdscr, config )               # Enter the Curses mainloop
-    except:
+    except Exception:
         failure			= traceback.format_exc()
     finally:
         config.setdefault( 'control', {} )['done'] = True
         stdscr.keypad(0)
-        curses.echo() ; curses.nocbreak()
+        curses.echo()
+        curses.nocbreak()
         curses.endwin()
         time.sleep(.25)
     if failure:
@@ -1761,7 +1742,7 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
 """
     )
     ap.add_argument( '-v', '--verbose', action="count",
-                     default=0, 
+                     default=0,
                      help="Display logging information." )
     ap.add_argument( '-q', '--quiet', action="count",
                      default=0,
@@ -1789,7 +1770,6 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
 
     args = ap.parse_args( argv )
 
-
     # Set up logging; also, handle the degenerate case where logging has *already* been set up (and
     # basicConfig is a NO-OP), by (also) setting the logging level.
     log_cfg['level']		= log_level( args.verbose - args.quiet )
@@ -1798,7 +1778,6 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
     logging.basicConfig( **log_cfg )
     if args.verbose or args.quiet:
         logging.getLogger().setLevel( log_cfg['level'] )
-
 
     profiler			= None
     profiler_limit		= 25
@@ -1819,7 +1798,7 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
 
     # Get some details about the Ed25519 version we're using, and suppress some nagging about
     # letting it generate random seeds.
-    warnings.simplefilter('ignore') # We know about handling Ed25519 random seeds...
+    warnings.simplefilter('ignore')  # We know about handling Ed25519 random seeds...
 
     log.info( "Ed25519 Version: {} / {} / {}".format(
         getattr( licensing.ed25519, '__version__', None ), licensing.ed25519.__package__, licensing.ed25519.__path__ ))
@@ -1966,7 +1945,7 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
         while not shutdown_signalled and all( t.is_alive() for t in threads ):
             signal_service()
             time.sleep( .1 )
-    except:
+    except Exception:
         logging.error( "Main thread Exception: %s", traceback.format_exc() )
     finally:
         # Either the Web or the Curses GUI completed, or something blew up.  Shut all the
@@ -1981,7 +1960,7 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
 
         if args.profile:
             profiler.disable()
-            if args.profile != '-': # optionally dump stats to a filename
+            if args.profile != '-':  # optionally dump stats to a filename
                 profiler.dump_stats( args.profile )
             prof		= pstats.Stats( profiler, stream=sys.stderr )
             print( "\n\nTIME:", file=sys.stderr )

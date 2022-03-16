@@ -33,20 +33,13 @@ import uuid
 from enum import Enum
 
 from .defaults		import (
-    MODULENAME, LICPATTERN, LICEXTENSION, KEYPATTERN, KEYEXTENSION,
+    MODULENAME, LICPATTERN, KEYPATTERN, KEYEXTENSION,
 )
 from ..misc		import (
     type_str_base, urlencode,
     parse_datetime, parse_seconds, Timestamp, Duration,
     deduce_name, config_open, config_open_deduced,
 )
-
-__author__                      = "Perry Kundert"
-__email__                       = "perry@dominionrnd.com"
-__copyright__                   = "Copyright (c) 2022 Dominion Research & Development Corp."
-__license__                     = "Dual License: GPLv3 (or later) and Commercial (see LICENSE)"
-
-log				= logging.getLogger( "licensing" )
 
 # Get Ed25519 support. Try a globally installed ed25519ll possibly with a CTypes binding, Otherwise,
 # try our local Python-only ed25519ll derivation, or fall back to the very slow D.J.Bernstein Python
@@ -58,6 +51,13 @@ try:
     from chacha20poly1305 import ChaCha20Poly1305
 except ImportError:
     pass
+
+__author__                      = "Perry Kundert"
+__email__                       = "perry@dominionrnd.com"
+__copyright__                   = "Copyright (c) 2022 Dominion Research & Development Corp."
+__license__                     = "Dual License: GPLv3 (or later) and Commercial (see LICENSE)"
+
+log				= logging.getLogger( "licensing" )
 
 
 class LicenseIncompatibility( Exception ):
@@ -113,7 +113,7 @@ def into_text( binary, decoding='hex', encoding='ASCII' ):
         assert isinstance( binary, bytes ), \
             "Cannot convert to {}: {!r}".format( decoding, binary )
         binary			= codecs.getencoder( decoding )( binary )[0]
-        binary			= binary.replace( b'\n', b'' ) # some decodings contain line-breaks
+        binary			= binary.replace( b'\n', b'' )  # some decodings contain line-breaks
         if encoding is not None:
             return binary.decode( encoding )
         return binary
@@ -297,7 +297,7 @@ def machine_UUIDv4( machine_id_path=None):
     TODO: Include root disk UUID?
     """
     if machine_id_path is None:
-        machine_id_path		= "/etc/machine-id" 
+        machine_id_path		= "/etc/machine-id"
     try:
         with open( machine_id_path, 'r' ) as m_id:
             machine_id		= m_id.read().strip()
@@ -329,7 +329,6 @@ def domainkey( product, domain, service=None, pubkey=None ):
         'some-product.crypto-licensing._domainkey.example.com.'
         >>> dkim_rr
 
-    
         # An Awesome, Inc. product
         >>> keypair = author( seed=b'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' )
         >>> path, dkim_rr = domainkey( "Something Awesome v1.0", "awesome-inc.com", pubkey=keypair )
@@ -392,7 +391,7 @@ class Serializable( object ):
             except AttributeError:
                 try:
                     vars_seq	= self.__dict__
-                except AttributeError:
+                except AttributeError as exc:
                     vars_seq	= ()
                     if cls is not object:  # Only the base object() is allowed to have neither __slots__ nor __dict__
                         log.error( "vars for base {cls!r} instance {self!r} has neither __slots__ nor __dict__: {exc}".format(
@@ -447,10 +446,10 @@ class Serializable( object ):
         """Returns the serialization of the requested key, passing thru values without a serializer."""
         if key in self.keys( every=True ):
             try:
-                serialize	= self.serializer( key ) # (no Exceptions)
-                value		= getattr( self, key ) # IndexError
+                serialize	= self.serializer( key )  # (no Exceptions)
+                value		= getattr( self, key )    # IndexError
                 if serialize:
-                    return serialize( value ) # conversion failure Exceptions
+                    return serialize( value )             # conversion failure Exceptions
                 return value
             except Exception as exc:
                 log.debug( "Failed to convert {class_name}.{key} with {serialize!r}: {exc}".format(
@@ -459,7 +458,7 @@ class Serializable( object ):
         raise IndexError( "{} not found in keys {}".format( key, ', '.join( self.keys( every=True ))))
 
     def __str__( self ):
-        return self.serialize( indent=4, encoding=None ) # remains as UTF-8 text
+        return self.serialize( indent=4, encoding=None )  # remains as UTF-8 text
 
     def JSON( self, indent=None, default=None ):
         """Return the default JSON representation of the present (default: entire self) object."""
@@ -509,7 +508,7 @@ class Serializable( object ):
         assert pubkey and signature, \
             "Missing required {}".format(
                 ', '.join( () if pubkey else ('public key',)
-                          +() if signature else ('signature',) ))
+                           + () if signature else ('signature',) ))
         return ed25519.crypto_sign_open( signature + self.serialize(), pubkey )
 
     def digest( self, encoding=None, decoding=None ):
@@ -563,7 +562,7 @@ class IssueRequest( Serializable ):
 def overlap_intersect( start, length, other ):
     """Accepts a start/length, and a Timespan (something w/ start and length), and compute the
     intersecting start/length, and its begin and (if known) ended timestamps.
-    
+
         start,length,begun,ended = overlap_intersect( start, length, other )
 
     A start/Timespan w/ None for length is assumed to endure from its start with no time limit.
@@ -615,7 +614,9 @@ class Agent( Serializable ):
         pubkey		= into_b64,
     )
 
-    def __init__( self, name,
+    def __init__(
+        self,
+        name,
         pubkey		= None,			# Normally, obtained from domain's DKIM1 TXT RR
         domain		= None,			# Needed for DKIM if no pubkey provided
         product		= None,
@@ -637,7 +638,7 @@ class Agent( Serializable ):
     def pubkey_query( self ):
         """Obtain the agent's public key.  This was either provided at License construction time, or
         can be obtained from a DNS TXT "DKIM" record.
-        
+
         TODO: Cache
 
         Query the DKIM record for an author public key.  May be split into multiple strings:
@@ -691,9 +692,10 @@ class Timespan( Serializable ):
         length		= into_str,
     )
 
-    def __init__( self,
+    def __init__(
+        self,
         start		= None,
-        length		= None
+        length		= None,
     ):
         """A License usually has a timespan of start timestamp and duration length.  These cannot
         exceed the timespan of any License dependencies.  First, get any supplied start time as a
@@ -722,10 +724,9 @@ class Grant( Serializable ):
     """
     def __init__( self, *args, **kwds ):
         if args:
-            assert len( args ) == 1 and isinstance( args[0], type_str_base ) and not grant, \
+            assert len( args ) == 1 and isinstance( args[0], type_str_base ) and not kwds, \
                 "Grant option cannot be defined w/ multiple or non-str args both args: {args!r} and/or kwds: {kwds!r}".format(
-                    args=args, kwds=kwds
-                )
+                    args=args, kwds=kwds )
             kwds		= json.loads( args[0] )
         option			= dict( kwds )
         # Ensure that options only has first-level keys w/ /dicts
@@ -879,11 +880,11 @@ class License( Serializable ):
         assert author, \
             "Issuing a Licence without an author is incorrect"
         if isinstance( author, type_str_base ):
-            author		= json.loads( author )	# Deserialize Agent, if necessary
+            author		= json.loads( author )  # Deserialize Agent, if necessary
         self.author		= Agent( **author )
 
         if isinstance( client, type_str_base ):
-            client		= json.loads( client )	# Deserialize Agent, if necessary
+            client		= json.loads( client )  # Deserialize Agent, if necessary
         self.client		= Agent( **client ) if client else None
 
         self.machine		= into_UUIDv4( machine )  # None or machine UUIDv4 (raw or serialized)
@@ -923,8 +924,7 @@ class License( Serializable ):
         length			= self.length
         for other in others:
             # If we determine a 0-length overlap, we have failed.
-            start, length, begun, ended \
-                                = overlap_intersect( start, length, other )
+            start,length,begun,ended = overlap_intersect( start, length, other )
             if length is not None and length.total_seconds() == 0:
                 # Overlap was computable, and was zero
                 raise LicenseIncompatibility(
@@ -959,15 +959,13 @@ class License( Serializable ):
         constructing a new License (assuming at least the necessary author, author_domain and
         product were defined).
 
-        
-
         """
         if author_pubkey:
             author_pubkey, _	= into_keys( author_pubkey )
             assert author_pubkey, "Unrecognized author_pubkey provided"
 
         if author_pubkey and author_pubkey != self.author.pubkey:
-            raise LicenseIncompatibility( 
+            raise LicenseIncompatibility(
                 "License for {auth}'s {prod!r} public key mismatch".format(
                     auth	= self.author.name,
                     prod	= self.author.product,
@@ -990,7 +988,7 @@ class License( Serializable ):
             try:
                 super( License, self ).verify( pubkey=self.author.pubkey, signature=signature )
             except Exception as exc:
-                raise LicenseIncompatibility( 
+                raise LicenseIncompatibility(
                     "License for {auth}'s {prod!r}: signature mismatch: {sig!r}; {exc}".format(
                         auth	= self.author.name,
                         prod	= self.author.product,
@@ -1033,7 +1031,6 @@ class License( Serializable ):
         # fail.
 
         # First, scan the constraints to see if any are callable
-        
 
         # Verify all sub-license start/length durations comply with this License' duration.
         # Remember, these start/length specify the validity period of the License to be
@@ -1078,7 +1075,7 @@ class License( Serializable ):
         # self.machine is None, we don't need to do anything, because the License is good for any
         # machine.  Use machine=True to force constraints to include the current machine UUID.
         machine			= None
-        if machine_id_path != False and ( self.machine or constraints.get( 'machine' )):
+        if machine_id_path is not False and ( self.machine or constraints.get( 'machine' )):
             # Either License or constraints specify a machine (so we have to verify), and the
             # machine_id_path directive doesn't indicate to *not* check the machine ID (eg. when
             # issuing the license from a different machine)
@@ -1095,7 +1092,7 @@ class License( Serializable ):
             machine_cons	= constraints.get( 'machine' )
             if machine_cons not in (None, True) and machine_cons != machine_uuid:
                 raise LicenseIncompatibility(
-                    "Constraints on {auth}'s {prod!r} specifies Machine ID {required}; found {detected}{vie}".format(
+                    "Constraints on {auth}'s {prod!r} specifies Machine ID {required}; found {detected}{via}".format(
                         auth	= self.author.name,
                         prod	= self.author.product,
                         required= machine_cons,
@@ -1145,12 +1142,12 @@ class LicenseSigned( Serializable ):
 
     Authoring a License
     -------------------
-    
+
     A software issuer (or end-user, in the case of machine-specific or numerically limited Licenses)
     must create new Licenses.
-    
+
         >>> from crypto_licensing import author, issue, verify
-    
+
     First, create a Keypair, including both signing (private, .sk) and verifying (public, .vk) keys:
 
         >>> signing_keypair = author( seed=b'our secret 32-byte seed material' )
@@ -1187,11 +1184,11 @@ class LicenseSigned( Serializable ):
 
     De/Serializing Licenses
     -----------------------
-    
+
     Licenses are typically stored in files, in the configuration directory path of the application.
 
         import json
-        # Locate, open, read 
+        # Locate, open, read
         #with config_open( "application.crypto-licencing", 'r' ) as provenance_file:
         #    provenance_ser	= provenance_file.read()
         >>> provenance_dict = json.loads( provenance_ser )
@@ -1200,7 +1197,7 @@ class LicenseSigned( Serializable ):
     the license file basename deduced from your __package__ or __file__ name:
 
         import crypto_licensing as cl
-        licenses		= dict( cl.load( 
+        licenses		= dict( cl.load(
             filename	= __file__,
             confirm	= False, # don't check signing key validity via DKIM
         ))
@@ -1241,7 +1238,7 @@ class LicenseSigned( Serializable ):
     def __init__( self, license, author_sigkey=None, signature=None, confirm=None,
                   machine_id_path=None ):
         """Given an ed25519 signing key (32-byte private + 32-byte public), produce the provenance
-        for the supplied License. 
+        for the supplied License.
 
         Normal constructor calling convention to take a License and a signing key and create
         a signed provenance:
@@ -1254,7 +1251,7 @@ class LicenseSigned( Serializable ):
 
         """
         if isinstance( license, type_str_base ):
-            license		= json.loads( license ) # Deserialize License, if necessary
+            license		= json.loads( license )  # Deserialize License, if necessary
         assert isinstance( license, (License, dict) ), \
             "Require a License or its serialization dict, not a {!r}".format( license )
         if isinstance( license, dict ):
@@ -1311,9 +1308,13 @@ class KeypairPlaintext( Serializable ):
         copy of the public key.
 
         """
-        assert sk, \
-            "Cannot recover Plaintext Keypair without private key material"
-        self.sk			= into_bytes( sk, ('base64',) )
+        if not sk and not vk:
+            sk			= author( why="No Keypair supplied to KeypairPlaintext" )
+        if hasattr( sk, 'sk' ):
+            # Provided with a raw ed25519.Keypair or KeypairPlaintext; use its sk; retain any supplied vk for confirmation
+            _,self.sk		= into_keys( sk )
+        else:
+            self.sk		= into_bytes( sk, ('base64',) )
         assert len( self.sk ) in (32, 64), \
             "Expected 256-bit or 512-bit Ed25519 Private Key, not {}-bit {!r}".format(
                 len( self.sk ) * 8, self.sk )
@@ -1375,8 +1376,8 @@ class KeypairEncrypted( Serializable ):
             "Insufficient data to create an Encrypted Keypair"
         if not ( ciphertext and salt ) and not sk:
             sk			= author( why="No Keypair supplied to KeypairEncrypted" )
-        if isinstance( sk, ed25519.Keypair ):
-            # Provided with a raw ed25519.Keypair; extract its sk, and use any supplied vk for confirmation
+        if hasattr( sk, 'sk' ):
+            # Provided with a raw ed25519.Keypair or KeypairPlaintext; extract its sk, and use any supplied vk for confirmation
             _,edsk		= into_keys( sk )
             sk			= into_b64( edsk )
         if salt:
@@ -1443,7 +1444,7 @@ class KeypairEncrypted( Serializable ):
         ciphertext		= bytearray( self.ciphertext )
         try:
             plaintext		= bytes( cipher.decrypt( nonce, ciphertext ))
-        except:
+        except Exception:
             raise KeypairCredentialError(
                 "Failed to decrypt ChaCha20Poly1305-encrypted Keypair w/ {}'s credentials".format( username ))
         keypair			= author( seed=plaintext, why="decrypted w/ {}'s credentials".format( username ))
@@ -1526,7 +1527,7 @@ def verify(
         dependencies	= dependencies,
         **constraints )
 
-    
+
 def load(
     basename		= None,
     mode		= None,
@@ -1560,7 +1561,7 @@ def load(
         prov			= LicenseSigned(
             confirm=confirm, machine_id_path=machine_id_path, **prov_dict )
         yield prov_name, prov
-    
+
 
 def load_keys(
     basename	= None,
@@ -1573,7 +1574,8 @@ def load_keys(
     every	= False,
     detail	= True,		# Yield every file w/ origin + credentials info or exception?
     skip	= "*~",
-    **kwds ): # eg. extra=["..."], reverse=False, other open() args; see config_open
+    **kwds                      # eg. extra=["..."], reverse=False, other open() args; see config_open
+):
     """Load Ed25519 signing Keypair(s) from glob-matching file(s) with any supplied credentials.
     Yields all Encrypted/Plaintext Keypairs successfully opened (may be none at all), as a sequence
     of:
@@ -1585,7 +1587,7 @@ def load_keys(
     Otherwise, only successfully decrypted Keypairs will be returned.
 
     - Read the plaintext Keypair's public/private keys.
-    
+
       WARNING: Only perform this on action on a secured computer: this file contains your private
       signing key material in plain text form!
 
@@ -1710,7 +1712,7 @@ def check(
     mode		= None,
     extension_keypair	= None,
     extension_license	= None,
-    filename		= None,			#   or, deduce basename from supplied data
+    filename		= None,			# ...or, deduce basename from supplied data
     package		= None,
     username		= None,			# Keypair protected w/ supplied credentials
     password		= None,
@@ -1718,7 +1720,8 @@ def check(
     machine_id_path	= None,
     constraints		= None,
     skip		= "*~",
-    **kwds ):  # eg. extra=["..."], reverse=False, other open() args; see config_open
+    **kwds					# eg. extra=["..."], reverse=False, other open() args; see config_open
+):
     """Check that a License has been issued to our agent, for this machine and/or username,
     yielding a sequence of <Keypair>, None/<LicenseSigned> found.
 
@@ -1759,7 +1762,7 @@ def check(
             continue
         log.info( "{key_path:32}: {exc}".format(
             key_path=os.path.basename( key_path ), exc=keypair_or_error ))
-        
+
     log.log( logging.DETAIL, "{:48} {}".format( 'File', 'Keypair' ))
     for n,k in keypairs.items():
         log.log( logging.DETAIL, "{:48} {}".format( os.path.basename( n ), into_b64( k.vk )))
@@ -1773,7 +1776,6 @@ def check(
     # See if license(s) has been (or can be) issued to our Agent keypair(s) (ie. was issued to this
     # keypair as a specific client_pubkey or was non-client-specific, and then was signed by our
     # Keypair), for this Machine ID.
-    checked			= {}
     log.log( logging.NORMAL, "{:48} {:20} {:20} {}".format( 'File', 'Client', 'Author', 'Product' ))
     key_seen			= set()
     for key_path,keypair in keypairs.items():
@@ -1783,7 +1785,7 @@ def check(
 
         # For each unique Keypair, discover any LicenceSigned we've been issued, or can issue.
         lic_path,lic		= None,None	 # If no Licensese found, at all
-        prov,prov_path,reasons	= None,None,[]   # Why didn't any Licenses qualify?
+        prov,reasons		= None,[]        # Why didn't any Licenses qualify?
         for lic_path, lic in licenses.items():
             # Was this license issued by our Keypair Agent as the author?  This means that one was
             # issued by some author, with our Keypair Agent as a client, and we (previously) issued
@@ -1804,7 +1806,7 @@ def check(
             else:
                 # This license passed muster w/ the constraints supplied and it was already issued
                 # to us; we're done.
-                prov,prov_path	= lic,lic_path
+                prov		= lic
                 break
 
             # License not already issued to us; check whether it could be ours w/ some remaining
@@ -1823,7 +1825,7 @@ def check(
                     exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
                 reasons.append( str( exc ))
                 continue
-            
+
             # Validated this License is sub-Licensable by this Keypair Agent!  This License is
             # available to be issued to us and verified, now, as one of our License dependencies.
             # Craft a new License, w/ the requirements produced by the verify, above.  If the

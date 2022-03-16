@@ -24,7 +24,7 @@ from .verification import (
 )
 from .. import ed25519
 
-from ..misc import parse_datetime, parse_seconds, Timestamp, Duration, deduce_name
+from ..misc import deduce_name
 from .defaults import LICEXTENSION
 
 log				= logging.getLogger( "verification_test" )
@@ -62,7 +62,7 @@ def test_Grant():
     #assert not grant.empty()
     grant_str			= str( grant )
     #print( grant_str )
-    assert str(grant) == """\
+    assert grant_str == """\
 {
     "cpppo_test":{
         "Hz":1000
@@ -70,6 +70,7 @@ def test_Grant():
 }"""
     assert grant.JSON() == '{"cpppo_test":{"Hz":1000}}'
     #assert Grant().empty()
+
 
 def test_License_domainkey():
     """Ensure we can handle arbitrary UTF-8 domains, and compute the proper DKIM1 RR path"""
@@ -215,7 +216,7 @@ def test_License_base():
                 name	= "Dominion Research & Development Corp.",
                 product	= "Cpppo Test",
             ),
-            timespan = dict( 
+            timespan = dict(
                 start	= "2021-09-30 11:22:33 Canada/Mountain",
                 length	= "1y"
             ),
@@ -231,7 +232,7 @@ def test_License_base():
                 product	= "Cpppo Test",
                 pubkey	= dominion_sigkey[32:],
             ),
-            timespan = dict( 
+            timespan = dict(
                 start	= "2021-09-30 11:22:33 Canada/Mountain",
                 length	= "1y"
             ),
@@ -272,7 +273,7 @@ def test_License_base():
 
     prov_str = str( prov )
     #print( prov_str )
-    assert  prov_str == """\
+    assert prov_str == """\
 {
     "license":{
         "author":{
@@ -380,7 +381,7 @@ def test_LicenseSigned():
 
     # Create a signing key for Awesome, Inc.; securely hide it (or, print it for everyone to see,
     # just below! ;), and publish the base-64 encoded public key as a TXT RR at:
-    # 
+    #
     #     ethernet-ip-tool.crypto-licensing._domainkey.awesome.com 300 IN TXT \
     #        "v=DKIM1; k=ed25519; p=PW847szICqnQBzbdr5TAoGO26RwGxG95e3Vd/M+/GZc="
     #
@@ -609,7 +610,7 @@ def test_licensing_check():
             extra		= [os.path.dirname( __file__ )],
         )
     )
-    assert len( checked ) == 1 # bad password, but same key is available in plaintext
+    assert len( checked ) == 1  # bad password, but same key is available in plaintext
     checked			= dict(
         (into_b64( key.vk ), lic)
         for key,lic in check(

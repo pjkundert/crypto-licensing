@@ -22,7 +22,6 @@ except ImportError:
     pass
 
 import calendar
-import collections
 import datetime
 import fnmatch
 import glob
@@ -77,6 +76,30 @@ try:
 except ImportError:
     from urllib.parse import urlencode			# noqa: F401
 
+
+# Use secrets.token_bytes for random number generation; supply for Python <3.6
+try:
+    from secrets import token_bytes, DEFAULT_ENTROPY
+except ImportError:
+    # Directly from https://github.com/python/cpython/blob/3.10/Lib/secrets.py
+    from random import SystemRandom as _sysrand
+
+    DEFAULT_ENTROPY = 32  # number of bytes to return by default
+
+    def token_bytes(nbytes=None):
+        """Return a random byte string containing *nbytes* bytes.
+
+        If *nbytes* is ``None`` or not supplied, a reasonable
+        default is used.
+
+        >>> token_bytes(16)  #doctest:+SKIP
+        b'\\xebr\\x17D*t\\xae\\xd4\\xe3S\\xb6\\xe2\\xebP1\\x8b'
+        """
+        if nbytes is None:
+            nbytes = DEFAULT_ENTROPY
+        return _sysrand.randbytes(nbytes)
+
+
 __author__                      = "Perry Kundert"
 __email__                       = "perry@dominionrnd.com"
 __copyright__                   = "Copyright (c) 2022 Dominion R&D Corp."
@@ -86,17 +109,16 @@ __license__                     = "Dual License: GPLv3 (or later) and Commercial
 Miscellaneous functionality used by various other modules.
 """
 
-
-# 
+#
 # Logging related tooling
-# 
+#
 
-# 
+#
 # Add some new levels, w/ minimal functionality.  We cannot (easily) add new eg. logging.boo
 # functions for logging level BOO, because logging uses an extremely fragile mechanism for finding
 # the first non-logging function stack frame.  So, we must use .log( logging.BOO, ... ) with the new
 # levels...  We've tried to be consistent w/ cpppo's logging levels.
-# 
+#
 
 #      .FATAL 		       == 50
 #      .ERROR 		       == 40
@@ -322,7 +344,7 @@ def parse_seconds( seconds ):
     """Convert an <int>, <float>, "<float>", "[HHH]:MM[:SS[.sss]]", "1m30s" or a Duration to a float number of seconds.
 
     """
-    if isinstance( seconds, datetime.timedelta ):	# <timedelta>, <Duration>
+    if isinstance( seconds, datetime.timedelta ):       # <timedelta>, <Duration>
         return seconds.total_seconds()
     try:						# '1.23'
         return float( seconds )
@@ -433,8 +455,8 @@ class Timestamp( datetime.datetime ):
     LOC				= get_localzone()       # from environment TZ, /etc/timezone, etc.
 
     _precision			= 3			# How many default sub-second digits
-    _epsilon			= 10**-_precision       # How small a difference to consider ==
-    _fmt			= '%Y-%m-%d %H:%M:%S'	# 2014-04-01 10:11:12
+    _epsilon			= 10 ** -_precision     # How small a difference to consider ==
+    _fmt			= '%Y-%m-%d %H:%M:%S'   # 2014-04-01 10:11:12
 
     def __str__( self ):
         return self.render()
@@ -536,10 +558,11 @@ class Timestamp( datetime.datetime ):
 
     # Comparisons.  Always equivalent to lexicographically, in UTC to 3 decimal places.  However,
     # we'll compare numerically, to avoid having to render/compare strings; if the <self>.value is
-    # within _epsilon (default: 0.001) of <rhs>.value, it is considered equal.  Pypy2
-    # re-implements the pytz library w/ some comparisons against raw datetime.datetimes, so we
-    # have to support them directly; they have no .timestamp().  However, pypy2 has other issues,
-    # so we don't support it -- it is an optional optimization for Python2 code, anyway...
+    # within _precision (default: 3) / _epsilon (default: 0.001) of <rhs>.value, it is considered
+    # equal.  Pypy2 re-implements the pytz library w/ some comparisons against raw
+    # datetime.datetimes, so we have to support them directly; they have no .timestamp().  However,
+    # pypy2 has other issues, so we don't support it -- it is an optional optimization for Python2
+    # code, anyway...
     def __lt__( self, rhs ):
         assert isinstance( rhs, (Timestamp, datetime.datetime) ), \
             "Expected Timestamp/datetime, got: {!r}".format( rhs )
@@ -547,16 +570,16 @@ class Timestamp( datetime.datetime ):
             rhs_ts		= rhs.timestamp()
         except AttributeError:
             rhs_ts		= calendar.timegm( rhs.utctimetuple() ) + rhs.microsecond / 1000000
-        return self.timestamp() + self.__class__._epsilon < rhs_ts
+        return round( self.timestamp(), self._precision ) < round( rhs_ts, self._precision )
 
     def __gt__( self, rhs ):
         assert isinstance( rhs, (Timestamp, datetime.datetime) ), \
             "Expected Timestamp/datetime, got: {!r}".format( rhs )
         try:
             rhs_ts		= rhs.timestamp()
-        except AttributteError:
+        except AttributeError:
             rhs_ts		= calendar.timegm( rhs.utctimetuple() ) + rhs.microsecond / 1000000
-        return self.timestamp() - self.__class__._epsilon > rhs_ts
+        return round( self.timestamp(), self._precision ) > round( rhs_ts, self._precision )
 
     def __le__( self, rhs ):
         return not self.__gt__( rhs )
@@ -585,7 +608,6 @@ class Timestamp( datetime.datetime ):
         if rhs.total_seconds():
             return Timestamp( super( Timestamp, self ).__add__( rhs ), tzinfo=self.tzinfo )
         return self
-
 
     def __sub__( self, rhs ):
         """Convert any int/float/str, etc. to a Duration/timedelta, and subtract it from the current
