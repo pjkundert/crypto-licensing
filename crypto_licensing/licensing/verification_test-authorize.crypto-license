@@ -1,0 +1,40 @@
+{
+    "license":{
+        "author":{
+            "domain":"awesome-inc.com",
+            "name":"Awesome, Inc.",
+            "product":"EtherNet/IP Tool",
+            "pubkey":"cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ="
+        },
+        "client":{
+            "name":"End User, LLC",
+            "pubkey":"O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik="
+        },
+        "dependencies":[
+            {
+                "license":{
+                    "author":{
+                        "domain":"dominionrnd.com",
+                        "name":"Dominion Research & Development Corp.",
+                        "product":"Cpppo Test",
+                        "pubkey":"qZERnjDZZTmnDNNJg90AcUJZ+LYKIWO9t0jz/AzwNsk="
+                    },
+                    "client":{
+                        "name":"Awesome, Inc.",
+                        "pubkey":"cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ="
+                    },
+                    "timespan":{
+                        "length":"1y",
+                        "start":"2021-09-30 17:22:33 UTC"
+                    }
+                },
+                "signature":"tr2OcE1pT0tg7i+rotQJmFG8dIf8GhLtmBYxYDIshIRGKkmvAbCpuDgBKg8V0xUyaqh7OCCvlKRvvyqOEbD5DQ=="
+            }
+        ],
+        "timespan":{
+            "length":"1y",
+            "start":"2022-09-29 17:22:33 UTC"
+        }
+    },
+    "signature":"NXRCa4r81zywf2Ad5SZlH3bx9yA8mBQ69RQUOqYzJW9cfN1qWnLSevV7OOnQ/jbwaejghOBRZZoy3P+oX69mBQ=="
+}

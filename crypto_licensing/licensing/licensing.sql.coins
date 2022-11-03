@@ -43,4 +43,4 @@ INSERT INTO "origins" VALUES( 'mmgen local',	'From mmgen server running locally'
 /*
  *                             origin,  ordinal,  coin,  description,           address
  */
-INSERT INTO "wallets" VALUES( 'Manual',     1,  'ETH',  'Dominion R&D',        '0x3193471Ae1a78E8999b6eAB4a4D801799Aa31ee3' );
+INSERT INTO "wallets" VALUES( 'Manual',     1,  'ETH',  'Dominion R&D',        '0xe4909b66FD66DA7d86114695A1256418580C8767' );

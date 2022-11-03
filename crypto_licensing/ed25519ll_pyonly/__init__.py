@@ -32,7 +32,7 @@ def crypto_sign_keypair(seed=None):
     if seed is None:
         seed = os.urandom(SEEDVALUEBYTES)
     else:
-        warnings.warn("ed25519ll should choose a {}-byte random seed.".format( SEEDVALUEBYTES ),
+        warnings.warn("ed25519ll should choose a {}-byte random seed.".format(SEEDVALUEBYTES),
                       RuntimeWarning)
     if len(seed) == SEEDVALUEBYTES:
         skbytes = seed

@@ -23,8 +23,8 @@ __license__                     = "Dual License: GPLv3 (or later) and Commercial
 
 __all__				= [
     'Serializable', 'LicenseIncompatibility', 'License', 'LicenseSigned', 'Agent',
-    'domainkey', 'author', 'issue', 'verify', 'load', 'load_keys',
-    'check', 'authorize',
+    'domainkey', 'authoring', 'issue', 'verify', 'load', 'load_keys',
+    'check', 'authorize', 'register', 'license', 
     'KeypairEncrypted', 'KeypairPlaintext',
     'KEYPATTERN', 'LICPATTERN',
 ]

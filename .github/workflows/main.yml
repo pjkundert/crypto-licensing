@@ -37,7 +37,7 @@ jobs:
         pip install ed25519ll
     - name: Lint with flake8
       run: |
-        make analyze || true
+        make analyze
     - name: Test with pytest
       run: |
         make test

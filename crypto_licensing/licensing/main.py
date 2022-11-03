@@ -18,7 +18,7 @@
 #
 
 """
-    Implements the Crypto Licensing Server
+    Implements the Crypto Licensing server
 """
 
 from __future__ import print_function, absolute_import, division
@@ -48,18 +48,16 @@ import web
 import web.httpserver
 import wsgilog
 
-from .defaults		import (
-    KEYPATTERN, LICPATTERN,
-)
 from ..misc		import (
     timer, Timestamp,
     log_cfg, log_levelmap, log_level,
     config_paths, config_open, ConfigNotFoundError
 )
 from ..			import licensing
+from ..misc		import input_secure
 
 __author__                      = "Perry Kundert"
-__email__                       = "perry@hardconsulting.com"
+__email__                       = "perry@dominionrnd.com"
 __copyright__                   = "Copyright (c) 2022 Dominion Research & Development Corp."
 __license__                     = "Dual License: GPLv3 (or later) and Commercial (see LICENSE)"
 
@@ -87,8 +85,8 @@ DB_FILE				= "licensing.db"
 ACCFILE				= "licensing.access"
 
 CRDFILE				= "licensing.credentials"       # Any author credentials available persistently
-KEYFILE				= "licensing." + KEYPATTERN
-LICFILE				= "licensing." + LICPATTERN
+KEYFILE				= "licensing." + licensing.KEYPATTERN
+LICFILE				= "licensing." + licensing.LICPATTERN
 
 # SQL configurations are typically found in crypto_licensing/licensing, but may be customized and
 # placed in any of the Cpppo configuration file paths (eg. ~/.cpppo/, /etc/cpppo/, or the current
@@ -1736,6 +1734,16 @@ def main( argv=None, **licensing_kwds ):
         epilog		= """\
 Implements Ed25519-signed cryptographic licensing web service and API.
 
+Issues license(s) for products and capabilities available to the client, where either
+
+  A) the server has credentials indicating ownership of the Licenses, and hence
+     authority to sub-license them, or
+
+  B) the License itself grants authority to be sub-licensed to any Agent
+     asking for a License
+
+Produces invoices for each transaction
+
 Performance benefits greatly from installation of (optional) ed25519ll package:
 
     python3 -m pip install ed25519ll
@@ -1747,27 +1755,60 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
     ap.add_argument( '-q', '--quiet', action="count",
                      default=0,
                      help="Reduce logging output." )
-    ap.add_argument( '-w', '--web', default="0.0.0.0:8000",
-                       help='enable web server on interface (default: 0.0.0.0:8000)' )
-    ap.add_argument( '--no-web', dest='web', action="store_false",
-                       help='Disable web interface and access log file (default: False)' )
-    ap.add_argument( '--access', default=ACCFILE,
+    ap.add_argument( '-w', '--web',
+                     default="0.0.0.0:8000",
+                     help='enable web server on interface (default: 0.0.0.0:8000)' )
+    ap.add_argument( '--no-web', dest='web',
+                     action="store_false",
+                     help='Disable web interface and access log file (default: False)' )
+    ap.add_argument( '--access',
+                     default=ACCFILE,
                      help="Log all web server access to log file (default: {ACCFILE}".format(
                          ACCFILE=ACCFILE ))
     ap.add_argument( '--no-access', dest='access',
-                     action="store_const", const=None,
+                     const=None, action="store_const",
                      help='Disable web server access log file, including stdout/stderr redirection' )
     ap.add_argument( '--no-gui', dest='gui',
-                       action="store_false", default=True,
-                       help='Disable Curses GUI interface (default: False)' )
-    ap.add_argument( '-c', '--config', action='append',
+                     default=True, action="store_false",
+                     help='Disable Curses GUI interface (default: False)' )
+    ap.add_argument( '-c', '--config',
+                     action='append',
                      help="Add another (higher priority) config file path." )
     ap.add_argument( '-l', '--log',
+                     default=None,
                      help="Log file, if desired (default, if text gui: {LOGFILE})".format( LOGFILE=LOGFILE ))
-    ap.add_argument( '-P', '--profile',
+    ap.add_argument( '--profile',
                      default=None,
                      help="Profile to stderr (only, if '-' specified), optionally saving data to a file (default: None)" )
-
+    ap.add_argument( '--client',
+                     default=None,
+                     help="This {DISTRIBUTION}server's client licensee's company name".format(
+                         DISTRIBUTION=licensing.DISTRIBUTION ))
+    ap.add_argument( '--domain',
+                     default=None,
+                     help="This {DISTRIBUTION} server's client licensee's domain; can be used to get public key via DKIM".format(
+                         DISTRIBUTION=licensing.DISTRIBUTION ))
+    ap.add_argument( '--product',
+                     default=licensing.PRODUCT_SERVER,
+                     help="This {DISTRIBUTION} server's client licensee's product name (if any; default: {PRODUCT})".format(
+                         DISTRIBUTION=licensing.DISTRIBUTION, PRODUCT=licensing.PRODUCT_SERVER ))
+    ap.add_argument( '-U', '--username',
+                     default=None,
+                     help="{DISTRIBUTION} Agent credentials username; likely an email address ('-' to read from input)".format(
+                         DISTRIBUTION=licensing.DISTRIBUTION ))
+    ap.add_argument( '-P', '--password',
+                     default=None,
+                     help="{DISTRIBUTION} Agent credentials password ('-' to read from input)".format(
+                         DISTRIBUTION=licensing.DISTRIBUTION ))
+    ap.add_argument( '-R', '--register', action='store_true',
+                     default=False,
+                     help="If necessary, create and save a client Keypair" )
+    ap.add_argument( '-L', '--license', action='store_true',
+                     default=False,
+                     help="If no Agent Keypair or License is available, attempt to create and/or obtain one; provide --username/--password to encrypt"
+                     ", then use {ENVUSERNAME}/{ENVPASSWORD} environment vars to decrypt".format(
+                         ENVUSERNAME=licensing.ENVUSERNAME, ENVPASSWORD=licensing.ENVPASSWORD
+                     ))
     args = ap.parse_args( argv )
 
     # Set up logging; also, handle the degenerate case where logging has *already* been set up (and
@@ -1793,7 +1834,7 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
 
     # Any configuration files and licensing.load/load_keys should inspect these extra dirs
     global config_extras
-    config_extras	       += args.config
+    config_extras	       += args.config or []
     log.info( "Licensing configuration paths: {}".format( ', '.join( config_paths( '<file>', extra=config_extras ))))
 
     # Get some details about the Ed25519 version we're using, and suppress some nagging about
@@ -1802,6 +1843,129 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
 
     log.info( "Ed25519 Version: {} / {} / {}".format(
         getattr( licensing.ed25519, '__version__', None ), licensing.ed25519.__package__, licensing.ed25519.__path__ ))
+
+    # Load our Crypto Licensing server Agent's .crypto-key* and .crypto-lic* files.
+    #
+    # This is the Agent's Keypair that will be assigned a License to *run* a Crypto Licensing
+    # server, on a particular Machine ID.
+    #
+    # This is *not* an authority to sign and *issue* Crypto Licensing server licenses.  That Keypair
+    # is different, and is loaded *into* the Crypto Licensing server, and is used to sign new
+    # Licenses that are issued to other parties.
+    #
+    # If necessary, we'll ask for a License to be issued by Dominion R&D Corp, to this Agent, for
+    # authorization to run on this machine.  This License will grant us the capability to issue
+    # sub-Licenses for a certain number of "master" Licenses (Licenses that do not have a
+    # pre-defined client baked into them, and thus could be sub-licensed to any client).  The Crypto
+    # Licensing server is expected to issue Licenses that comply with the rules established by the
+    # "master" License; if it is found that one is issuing invalid Licenses (ie. the "master" grants
+    # 10 machines, but more than 10 sub-Licenses have been issued), then its license will be revoked
+    # by blacklisting its public key.
+    #
+    # The secrets required to decrypt the licensing.KeypairEncrypted are expected to be in
+    # environment variables (specify '-' to read from input):
+    #
+    #     CRYPTO_LIC_USERNAME  # or --username
+    #     CRYPTO_LIC_PASSWORD  # or --password (unsafe)
+    #
+    # Then, find and load the Keypaar and License --product (split on spaces), joined by '-'):
+    #
+    #     crypto-licensing-server.crypto-{keypair,license}
+    #
+    basename			= '-'.join( [ segment.lower() for segment in args.product.split() ] )
+    log.log( logging.DETAIL, "Loading Agent Ed25519 Keypair from {}...".format( basename ))
+    # Load Agent Keypair, if any, using any credentials supplied in the environment
+    cl_username			= args.username or os.getenv( licensing.ENVUSERNAME )
+    cl_password			= args.password or os.getenv( licensing.ENVPASSWORD )
+    if args.password and args.password != '-':
+        log.warning( "It is recommended to not use '-P|--password ...'; specify '-' to read from input" )
+
+    # Cycle through the available Agent ID keys, and any License(s) for Dominion R&D's Crypto
+    # Licensing.  On the first authorization loop, use no username/password if keyboard input
+    # specified; this allows the creation of an unencrypted Agent ID Keypair, if desired, on the
+    # first loop if no new credentials are entered.
+    username			= None if cl_username == '-' else cl_username
+    password			= None if cl_password == '-' else cl_password
+    credential_input		= cl_username == '-' or cl_password == '-'
+    try:
+        dominion		= licensing.Agent(
+            name	= licensing.COMPANY,
+            domain	= licensing.DOMAIN,
+            product	= licensing.PRODUCT,
+            pubkey	= licensing.PUBKEY,
+        )
+        server			= None
+        if args.product and args.domain:
+            server		= licensing.Agent(
+                name	= args.client,
+                domain	= args.domain,
+                product	= args.product,
+            )
+
+        authorization		= licensing.authorize(
+            author	= dominion,
+            client	= server,
+            basename	= basename,
+            username	= username,
+            password	= password,
+            registering	= args.register,        # Issue an Agent ID if none found?
+            acquiring	= args.license,		# Obtain a License if none found?
+        )
+
+        loaded			= []
+        for key,lic in authorization:
+            if key is None or lic is None:
+                what		= "No License found for Agent ID {}".format(
+                    licensing.into_b64( key.vk )) if key else "No Agent ID Keypair found"
+                if credential_input:
+                    what       += "; enter credentials"
+                    if password != "-":
+                        what   += " (leave blank to register w/ {}: {}".format(
+                            username or "(no username)", '*' * len( password or '' ) or "(no password)" )
+                log.warning( what )
+                # No Agent ID/License loaded; username/password may be incorrect.  If none provided,
+                # then authorization may go on to register w/ the last-entered username/password
+                if credential_input:
+                    credentials	= False
+                    if cl_username == '-':
+                        username	= input_secure( "Enter {} username: ".format( basename ))
+                        credentials |= bool( username )
+                    if cl_password == '-':
+                        password	= input_secure( "Enter {} password: ".format( basename ))
+                        credentials |= bool( password )
+                    if credentials:
+                        log.detail( "Supplying new credentials for {}: {}".format(
+                            username or "(no username)", '*' * len( password or '' ) or "(no password)" ))
+                        authorization.send( (username,password) )
+                    else:
+                        log.detail( "No new credentials for {}: {}{}".format(
+                            username or "(no username)", '*' * len( password or '' ) or "(no password)",
+                            " (attempting to register new Agent ID)" if args.register else " (authorization failed)" ))
+                continue
+            loaded.append( (key,lic) )
+
+        # Collect up all the License grants; there may be more than one, if the user has purchased
+        # multiple Licenses at different times.
+        grants			= licensing.Grant()
+        for key,lic in loaded:
+            log.normal( "Located Agent Ed25519 Keypair {} w/ License for {}".format(
+                licensing.into_b64( key.vk ), lic and lic.author.product ))
+            grants	       |= lic.grants()
+
+        assert dominion.servicekey in grants, \
+            "Unable to find {}'s product {!r} service key {!r} in License Grants {}".format(
+                dominion.name, dominion.product, dominion.servicekey, grants )
+
+    except Exception as exc:
+        log.error( "Failed loading Agent Keypair and/or License: {exc}".format(
+            exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
+        with open( os.path.join( os.path.dirname( __file__ ), 'static', 'txt', 'CL-KEYPAIR-MISSING.txt' ), 'r' ) as f:
+            print( f.read().format(
+                DISTRIBUTION	= licensing.DISTRIBUTION,
+                KEYPATTERN	= licensing.KEYPATTERN,
+                LICENSE_OPTION	= '--license',
+            ), file=sys.stderr )
+        sys.exit( 1 )
 
     # Set up the global db, etc.
     db_setup()

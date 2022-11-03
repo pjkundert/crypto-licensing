@@ -8,6 +8,8 @@ import logging
 import os
 import pytest
 
+import pytz
+
 try:
     import chacha20poly1305
 except ImportError:
@@ -15,16 +17,18 @@ except ImportError:
 
 from dns.exception import DNSException
 from .verification import (
-    License, LicenseSigned, LicenseIncompatibility, Timespan, Grant,
+    License, LicenseSigned, LicenseIncompatibility, Timespan, Agent,
     KeypairPlaintext, KeypairEncrypted, machine_UUIDv4,
     domainkey, domainkey_service, overlap_intersect,
     into_b64, into_hex, into_str, into_str_UTC, into_JSON, into_keys,
-    into_timestamp, into_duration,
-    author, issue, verify, load, load_keys, check, authorize,
+    into_Timestamp, into_Duration,
+    authoring, issue, verify, load, load_keys, check, authorize,
 )
 from .. import ed25519
 
-from ..misc import deduce_name
+from ..misc import (
+    deduce_name, Timestamp
+)
 from .defaults import LICEXTENSION
 
 log				= logging.getLogger( "verification_test" )
@@ -41,48 +45,36 @@ password			= 'password'
 machine_id_path			= __file__.replace( ".py", ".machine-id" )
 
 
-def test_Timespan():
-    timespan			= Timespan( start='2021-01-01 00:00:00 Canada/Pacific', length='1w1d1h1m1s1ms' )
-    assert str(timespan) == """\
-{
-    "length":"1w1d1h1m1.001s",
-    "start":"2021-01-01 08:00:00 UTC"
-}"""
-    assert float(timespan.length) == 694861.001
-
-
-def test_Grant():
-    grant			= Grant(
-        cpppo_test	= dict(
-            Hz		= 1000,
-        )
+def test_Agent():
+    agent		= Agent(
+        name	= "Someone",
+        keypair	= authoring( seed=enduser_seed ),
     )
-    assert tuple( grant.vars() ) == (('cpppo_test', {'Hz': 1000}), )
-    assert tuple( grant.keys() ) == ('cpppo_test', )
-    #assert not grant.empty()
-    grant_str			= str( grant )
-    #print( grant_str )
-    assert grant_str == """\
+    agent_str		= str( agent )
+    assert agent_str == """\
 {
-    "cpppo_test":{
-        "Hz":1000
-    }
+    "name":"Someone",
+    "pubkey":"O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik="
 }"""
-    assert grant.JSON() == '{"cpppo_test":{"Hz":1000}}'
-    #assert Grant().empty()
 
 
 def test_License_domainkey():
     """Ensure we can handle arbitrary UTF-8 domains, and compute the proper DKIM1 RR path"""
     assert domainkey_service( u"π" ) == 'xn--1xa'
-    assert domainkey_service( u"π/1" ) ==  'xn---1-lbc'
+    assert domainkey_service( u"π/1" ) == 'xn---1-lbc'
 
-    path, dkim_rr = domainkey( u"Some Product", "example.com" )
+    path, dkim_rr		= domainkey( u"Some Product", "example.com" )
     assert path == 'some-product.crypto-licensing._domainkey.example.com.'
     assert dkim_rr is None
-    author_keypair = author( seed=b'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' )
-    path, dkim_rr = domainkey( u"ᛞᚩᛗᛖᛋ᛫ᚻᛚᛇᛏᚪᚾ᛬", "awesome-inc.com", pubkey=author_keypair )
+    author_keypair		= authoring( seed=b'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' )
+    path, dkim_rr		= domainkey( u"ᛞᚩᛗᛖᛋ᛫ᚻᛚᛇᛏᚪᚾ᛬", "awesome-inc.com", pubkey=author_keypair )
     assert path == 'xn--dwec4cn7bwa4a4ci7a1b2lta.crypto-licensing._domainkey.awesome-inc.com.'
+    assert dkim_rr == 'v=DKIM1; k=ed25519; p=25lf4lFp0UHKubu6krqgH58uHs599MsqwFGQ83/MH50='
+
+    assert domainkey_service( u"יה-ה" ) == 'xn----7hcbr'
+    assert domainkey_service( u"יהוה" ) == 'xn--8dbaco'
+    path, dkim_rr		= domainkey( u"Raspberry π", u"יהוה.email", pubkey=author_keypair )
+    assert path == 'xn--raspberry--1qh.crypto-licensing._domainkey.xn--8dbaco.email.'
     assert dkim_rr == 'v=DKIM1; k=ed25519; p=25lf4lFp0UHKubu6krqgH58uHs599MsqwFGQ83/MH50='
 
 
@@ -98,8 +90,8 @@ def test_License_overlap():
     assert into_str_UTC( begun ) == "2021-01-01 08:00:00 UTC"
     assert into_str_UTC( ended ) == "2021-01-08 08:00:00 UTC"
 
-    start = into_timestamp( '2021-01-01 00:00:00 Canada/Pacific' )
-    length = into_duration( "1w" )
+    start = into_Timestamp( '2021-01-01 00:00:00 Canada/Pacific' )
+    length = into_Duration( "1w" )
     start,length,begun,ended = overlap_intersect( start, length, Timespan( None, None ))
     assert into_str_UTC( start ) == "2021-01-01 08:00:00 UTC"
     assert into_str( length ) == "1w"
@@ -108,7 +100,7 @@ def test_License_overlap():
 
 
 def test_KeypairPlaintext_smoke():
-    enduser_keypair		= author( seed=enduser_seed, why="from enduser seed" )
+    enduser_keypair		= authoring( seed=enduser_seed, why="from enduser seed" )
     kp_p			= KeypairPlaintext( sk=into_b64( enduser_seed ), vk=into_b64( enduser_keypair.vk ))
     kp_p_ser			= str( kp_p )
     assert kp_p_ser == """\
@@ -133,7 +125,7 @@ def test_KeypairPlaintext_smoke():
 
 @pytest.mark.skipif( not chacha20poly1305, reason="Needs ChaCha20Poly1305" )
 def test_KeypairEncrypted_smoke():
-    enduser_keypair		= author( seed=enduser_seed, why="from enduser seed" )
+    enduser_keypair		= authoring( seed=enduser_seed, why="from enduser seed" )
     salt			= b'\x00' * 12
     kp_e			= KeypairEncrypted(
         salt		= salt,
@@ -178,20 +170,20 @@ def test_KeypairEncrypted_smoke():
 
 @pytest.mark.skipif( not chacha20poly1305, reason="Needs ChaCha20Poly1305" )
 def test_KeypairEncrypted_load_keys():
-    enduser_keypair		= author( seed=enduser_seed, why="from enduser seed" )
+    enduser_keypair		= authoring( seed=enduser_seed, why="from enduser seed" )
     # load just the one encrypted cpppo-keypair (no glob wildcard on extension)
     (keyname,keypair_encrypted,keycred,keypair), = load_keys(
         extension="crypto-keypair", username=username, password=password,
-        extra=[os.path.dirname( __file__ )], filename=__file__ )
+        extra=[os.path.dirname( __file__ )], filename=__file__, detail=True )
     assert keycred == dict( username=username, password=password )
     assert enduser_keypair == keypair_encrypted.into_keypair( **keycred ) == keypair
 
 
 def test_KeypairPlaintext_load_keys():
-    enduser_keypair		= author( seed=enduser_seed, why="from enduser seed" )
+    enduser_keypair		= authoring( seed=enduser_seed, why="from enduser seed" )
     (keyname,keypair_plaintext,keycred,keypair), = load_keys(
         extension="crypto-keypair-plaintext",
-        extra=[os.path.dirname( __file__ )], filename=__file__ )
+        extra=[os.path.dirname( __file__ )], filename=__file__, detail=True )
     assert keycred == {}
     assert enduser_keypair == keypair_plaintext.into_keypair( **keycred ) == keypair
 
@@ -204,13 +196,14 @@ def test_License_serialization():
         assert str( prov ) == f.read()
 
 
-def test_License_base():
+def test_License_base( monkeypatch ):
+    monkeypatch.setattr( Timestamp, 'LOC', pytz.timezone( "Canada/Mountain" ))
     # Issue a License usable by any client, on any machine.  This would be suitable for the
     # "default" or "free" license for a product granting limited functionality, and might be
     # shipped along with the default installation of the software.
     confirm		= True
     try:
-        lic = License(
+        lic		= License(
             author	= dict(
                 domain	= "dominionrnd.com",
                 name	= "Dominion Research & Development Corp.",
@@ -225,7 +218,7 @@ def test_License_base():
         # No DNS; OK, let the test pass anyway.
         log.warning( "No DNS; disabling crypto-licensing DKIM confirmation for test: {}".format( exc ))
         confirm		= False
-        lic = License(
+        lic		= License(
             author	= dict(
                 domain	= "dominionrnd.com",
                 name	= "Dominion Research & Development Corp.",
@@ -239,7 +232,7 @@ def test_License_base():
             confirm	= confirm,
         )
 
-    lic_str = str( lic )
+    lic_str		= str( lic )
     #print( lic_str )
     assert lic_str == """\
 {
@@ -316,7 +309,7 @@ def test_License_base():
 
 def test_LicenseSigned():
     """Tests Licenses derived from other License dependencies."""
-    awesome_keypair = author( seed=awesome_sigkey[:32] )
+    awesome_keypair = authoring( seed=awesome_sigkey[:32] )
     awesome_pubkey, _ = into_keys( awesome_keypair )
 
     print("Awesome, Inc. ed25519 keypair; Signing: {sk}".format( sk=binascii.hexlify( awesome_keypair.sk )))
@@ -385,7 +378,7 @@ def test_LicenseSigned():
     #     ethernet-ip-tool.crypto-licensing._domainkey.awesome.com 300 IN TXT \
     #        "v=DKIM1; k=ed25519; p=PW847szICqnQBzbdr5TAoGO26RwGxG95e3Vd/M+/GZc="
     #
-    enduser_keypair		= author( seed=enduser_seed, why="from enduser seed" )
+    enduser_keypair		= authoring( seed=enduser_seed, why="from enduser seed" )
     enduser_pubkey, enduser_sigkey = into_keys( enduser_keypair )
     print("End User, LLC ed25519 keypair; Signing: {sk}".format( sk=into_hex( enduser_keypair.sk )))
     print("End User, LLC ed25519 keypair; Public:  {pk_hex} == {pk}".format( pk_hex=into_hex( enduser_keypair.vk ), pk=into_b64( enduser_keypair.vk )))
@@ -753,30 +746,35 @@ def test_licensing_check():
 
 
 def test_licensing_authorize( tmp_path ):
+    # Specific keys/licenses for the -authorize tests
     basename			= deduce_name(
         filename=__file__, package=__package__
     ) + '-authorize'
 
-    # Get an agent-agnosic license for any client agent on this machine-id, from End User, LLC.
-    # This would normally come from End User, LLC's license server (which would hold End User, LLC's
-    # corporate Keypair).  This license is good for any number of application agent's Keypairs
-    # running on this machine.
+    # Get an agent-agnosic license for any client agent on this machine-id, from End User, LLC, good
+    # for polling 10 EtherNet/IP nodes using 'ethernet-ip-tool'.  This would normally come from End
+    # User, LLC's license server (which would hold End User, LLC's corporate Keypair).  This license
+    # is good for any number of application agent's Keypairs running on this machine.
+    username			= "a@b.c"
+    password			= "password"
     checked			= dict(
-        (into_b64( key.vk ), lic)
+        (into_b64( key.vk ) if key else None, lic)
         for key,lic in check(
-            filename=__file__, package=__package__,  # filename takes precedence
-            username="a@b.c", password="password", confirm=False,
-            machine_id_path	= machine_id_path,
-            extra		= [
+            basename	= basename,
+            username	= username,
+            password	= password,
+            confirm	= False,
+            machine_id_path = machine_id_path,
+            extra	= [
                 os.path.dirname( __file__ )  # This test's directory
             ],
             constraints	= dict(
                 machine	= True,
-                grant	= dict(
-                    ethernet_ip_tool = dict(
+                grant	= {
+                    "ethernet-ip-tool": dict(
                         nodes	= 10,
                     ),
-                ),
+                },
             ),
         )
     )
@@ -831,17 +829,17 @@ def test_licensing_authorize( tmp_path ):
             }
         ],
         "grant":{
-            "ethernet_ip_tool":{
+            "ethernet-ip-tool":{
                 "nodes":10
             }
         },
         "machine":"00010203-0405-4607-8809-0a0b0c0d0e0f"
     },
-    "signature":"w+Yor0GJM5v0wCTwl58frLJ81/eFzsC2k9bVrJb6Qq+it1QNaxX9taOEJf3jo8zPbMaDmltuJw09Iu/w/rqICw=="
+    "signature":"+NpdHBXPtgBfqph8FkW4a+otGTeCCbim+2Gst6pJ3ZuQHa8zUKJQS1Y6lBWfr7uN4AsdRd6hAZi2jynt/+tjDw=="
 }"""
 
-    print( "Changing CWD to {}".format( tmp_path ))
-    os.chdir( str( tmp_path ))
+    # print( "Changing CWD to {}".format( tmp_path ))
+    # os.chdir( str( tmp_path ))
 
     # Lets save the End User, LLC machine-id license in our temp. dir
     lic_machine			= LicenseSigned(
@@ -850,8 +848,9 @@ def test_licensing_authorize( tmp_path ):
         **checked.popitem()[1]
     )
     machine			= lic_machine.license.machine
-    print( "Saving our License: {}".format( into_JSON( dict( lic_machine ), indent=4 )))
-    with open( basename + '.' + LICEXTENSION + "-enduser-{}".format( machine ), 'wb' ) as f:
+    lic_name			= basename + '.' + LICEXTENSION + "-enduser-{}".format( machine )
+    with open( os.path.join( str( tmp_path ), lic_name ), 'wb' ) as f:
+        print( "Saving our License to {}: {}".format( f.name, into_JSON( dict( lic_machine ), indent=4 ) ))
         f.write( lic_machine.serialize( indent=4 ))
 
     # OK, we want to get a license, issued to this dynamically generated application agent's
@@ -859,21 +858,32 @@ def test_licensing_authorize( tmp_path ):
     # User, LLC has a license to run "EtherNet/IP Tool" on any machine, any number of times, and
     # that it was previously saved (eg. when we installed a copy of "EtherNet/IP Tool" here?)  So,
     # we should be able to find it...
-    authorized			= list( (KeypairPlaintext( k.sk ),l) for k,l in authorize(
-        domain		= 'awesome-inc.com',
-        product		= 'EtherNet/IP Tool',
-        username	= 'a@b.c',
-        password	= 'password',
-        basename	= basename,
-        machine_id_path	= machine_id_path,
-        confirm		= False,
-        reverse_save	= True,  # Save in most specific (instead of most general) location
-        extra		= [      # config_paths and extras are always in general to specific order
-            os.path.dirname( __file__ ),
-            str( tmp_path ),
-        ],
-    ))
+    awesome_pubkey, _		= into_keys( awesome_sigkey )
+    authorized			= dict(
+        (into_b64( key.vk ) if key else None, lic)
+        for key, lic in authorize(
+            author	= Agent(
+                name	= "Awesome, Inc.",
+                domain	= 'awesome-inc.com',
+                product	= 'EtherNet/IP Tool',
+                pubkey	= awesome_pubkey,
+                confirm	= False,
+            ),
+            username	= username,
+            password	= password,
+            registering	= False,
+            licensing	= False,
+            basename	= basename,
+            machine_id_path = machine_id_path,
+            confirm	= False,
+            reverse_save = True,  # Save in most specific (instead of most general) location
+            extra	= [      # config_paths and extras are always in general to specific order
+                os.path.dirname( __file__ ),  # Our verification_test.crypto-keypair... file w/ O2o...2ik=
+                str( tmp_path ),     # so make sure we write here first (in reverse_save)
+            ],
+        )
+    )
 
-    assert len( authorized ) == 1
     authorized_str		= into_JSON( authorized, indent=4, default=str )
-    print( authorized_str )
+    print( "authorized: {}".format( authorized_str ))
+    assert len( authorized ) == 1

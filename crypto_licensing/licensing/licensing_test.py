@@ -57,6 +57,35 @@ licensing_cli_kwds		= {
 CFGPATH				=  __file__[:-3]  # trim off .py
 
 
+def test_generators():
+
+    class GenRaises( Exception ):
+        pass
+
+    def gen_raises():
+        """When a generator raises an Exception, it exits."""
+        yield 0
+        raise GenRaises( "In the middle of gen_raises" )
+        yield 1
+
+    def gen_catches():
+        """There is no way to resurrect a generator that has raised and Exception and exited."""
+        g		= gen_raises()
+        while True:
+            try:
+                x	= next( g )
+            except StopIteration:
+                break
+            except GenRaises as exc:
+                print( "Caught {exc}".format( exc=exc ) )
+                continue
+            yield x
+
+    with pytest.raises( GenRaises ):
+        list( gen_raises() )
+    assert list( gen_catches() ) == [0]
+
+
 def test_licensing_issue_query():
     # Issue a license to this machine-id, for client "End User, LLC".
 
@@ -175,4 +204,4 @@ def test_licensing_bench( tmp_path ):
     print( "Changing CWD to {}".format( tmp_path ))
     os.chdir( str( tmp_path ))
     assert not licensing_bench(), \
-        "One or more licensing_banch clients reported failure"
+        "One or more licensing_bench clients reported failure"

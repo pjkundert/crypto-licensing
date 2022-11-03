@@ -2,15 +2,19 @@ import datetime
 
 import pytz
 
-from .misc import parse_datetime, parse_seconds, Timestamp, Duration
+from .misc	import (
+    parse_datetime, parse_seconds, Timestamp, Duration
+)
 
 
-def test_duration():
+def test_Duration():
     d_str		= Duration( "1m33s123ms" )
     assert str( d_str ) == "1m33.123s"
 
 
-def test_timestamp():
+def test_Timestamp( monkeypatch ):
+    monkeypatch.setattr( Timestamp, 'LOC', pytz.timezone( "Canada/Mountain" ))
+
     dt			= parse_datetime( "2021-01-01 00:00:00.1 Canada/Pacific" )
     assert isinstance( dt, datetime.datetime )
 
@@ -55,6 +59,7 @@ def test_timestamp():
     assert ( ts_dt + "1us" ).timestamp() == 1609488000.100001
     assert ( ts_dt - "1us" ).timestamp() == 1609488000.099999
 
+    # Solidly beyond _precision (comparisons are +/- (10 ** _precision) / 2)
     ts_dt_p1ms		= ts_dt + "1ms"
     ts_dt_m1ms		= ts_dt - "1ms"
 

@@ -1,0 +1,25 @@
+#+title: Agent Keypair Missing
+#+OPTIONS: toc:nil title:nil author:nil
+
+#+BEGIN_ABSTRACT
+Create (or decrypt) an Ed25519 Keypair for a {DISTRIBUTION} Agent.
+
+#+END_ABSTRACT
+
+* Agent Keypair
+
+  A {DISTRIBUTION} Agent Keypair capable of obtaining and signing a License must exist.  Typically,
+  these will be files with a name like:
+
+  : {DISTRIBUTION}[...].{KEYPATTERN}
+
+** Credentials for KeypairEncrypted
+
+   If you see errors containing "decrypt" or "decrypt", then it is likely that you simply have the
+   wrong credentials.
+
+* Creating a Keypair
+
+  Run the program with the ={LICENSE_OPTION}= option to execute the steps for creating an Ed25519 Keypair
+  and obtaining a License.
+

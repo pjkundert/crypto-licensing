@@ -17,9 +17,37 @@
 
 from __future__ import absolute_import, print_function, division
 
-MODULENAME			= 'crypto-licensing'
+DISTRIBUTION			= 'crypto-licensing'
 
+#
+# Our core Crypto Licensing product's license information.  This
+# Licences signed by this Keypair carry capabilities related to Crypto
+# Licensing; eg. the ability to run a Crypto Licensing Server that may
+# issue sub-licenses for your various "master" Licenses.
+#
+COMPANY				= "Dominion Research & Development Corp."
+DOMAIN				= "dominionrnd.com"
+PRODUCT				= "Crypto Licensing"
+PUBKEY				= "5cijeUNWyR1mvbIJpqNmUJ6V4Od7vPEgVWOEjxiim8w="
+
+#
+# The Crypto Licensing Server application:  python3 -m crypto_licensing.licensing
+#
+PRODUCT_SERVER			= "Crypto Licensing Server"
+PRODUCT_SERVER_CAP_SUBLICENSES	= "sublicenses"		# How many master licenses may the Server sub-license?
+PRODUCT_SERVER_CAP_FEE_TABLE	= "sublicense-fees"     # A table of sub-licensing fee thresholds
+PRODUCT_SERVER_CAP_FEE_XPUB	= "sublicense-xpub"     # The X/Y/ZPublicKey to use to generate fee wallets
+
+#
+# Extensions and Globbing patterns for Agent ID Keypair, License... files
+#
 LICEXTENSION			= 'crypto-license'
 LICPATTERN			= 'crypto-lic*'
 KEYEXTENSION			= 'crypto-keypair'
 KEYPATTERN			= 'crypto-key*'
+
+#
+# Environment variable names
+#
+ENVPASSWORD			= 'CRYPTO_LIC_PASSWORD'
+ENVUSERNAME			= 'CRYPTO_LIC_USERNAME'
