@@ -12,7 +12,7 @@ TZ		?= Canada/Mountain
 VERSION		= $(shell $(PY3) -c 'exec(open("crypto_licensing/version.py").read()); print( __version__ )')
 
 # To see all pytest output, uncomment --capture=no ...
-PYTESTOPTS	= -vv  --capture=no --log-cli-level=25 # DEBUG # 23 == DETAIL # 25 == NORMAL
+PYTESTOPTS	= # -vv  --capture=no --log-cli-level=25 # DEBUG # 23 == DETAIL # 25 == NORMAL
 
 PY_TEST		= TZ=$(TZ) $(PY)  -m pytest $(PYTESTOPTS)
 PY3TEST		= TZ=$(TZ) $(PY3) -m pytest $(PYTESTOPTS)
@@ -29,7 +29,6 @@ help:
 	@echo "  install		Install in /usr/local for Python3"
 	@echo "  upload			Upload new version to pypi (package maintainer only)"
 	@echo "  clean			Remove build artifacts"
-
 
 test:
 	$(PY_TEST)
@@ -53,8 +52,6 @@ analyze:
 pylint:
 	cd .. && pylint crypto_licensing --disable=W,C,R
 
-
-
 # 
 # Bootstrap a License for a product, and a sub-License issue to an end-user of that product
 #
@@ -66,20 +63,56 @@ pylint:
 # 
 #
 CREDENTIALS	= $(abspath $(HOME)/.crypto-licensing )
-PRODUCT		= "Crypto Licensing Server"
-CLIENT		= "Someone Special"
-USERNAME	= "someone@example.com"
-PASSWORD	= "-"
 
-$(CREDENTIALS)/%.crypto-keypair:	$(CREDENTIALS)/%.crypto-seed
-	$(PY3) -m crypto_licensing -vvv register \
-	    --username $(USERNAME) --password $(PASSWORD) \
-	    --name $(notdir $(basename $@ )) \
+# PRODUCT		= "Awesome Product"
+# SERVICE		= "awesome-product"
+# CLIENT		= "Someone Special"
+# USERNAME	= "someone@example.com"
+# PASSWORD	= "password"
+
+products:			crypto-licensing		\
+				cpppo-test
+
+crypto-licensing:		AUTHOR="Dominion Research & Development Corp."
+crypto-licensing:		DOMAIN=dominionrnd.com
+crypto-licensing:		PRODUCT="Crypto Licensing"
+crypto-licensing:		SERVICE="crypto-licensing"
+crypto-licensing:		USERNAME=perry@dominionrnd.com
+crypto-licensing:		PASSWORD=tEREKLz8DFeVpf
+crypto-licensing:		CLIENT="Perry Kundert"
+crypto-licensing:		CLIENT_PUBKEY="Yhb9q2B4/fX0Ppt7onaJWwcxdgrEw6WrqoX4Bkfpe6k="
+crypto-licensing:		GRANTS="{\"crypto-licensing\": { \"fees\": { \"1mo\" ] }}"
+
+crypto-licensing:		$(CREDENTIALS)/crypto-licensing.crypto-license
+
+
+cpppo-test:			AUTHOR="Dominion Research & Development Corp."
+cpppo-test:			DOMAIN=dominionrnd.com
+cpppo-test:			PRODUCT="Cpppo Test"
+cpppo-test:			SERVICE="cpppo-test"
+cpppo-test:			USERNAME=perry@dominionrnd.com
+cpppo-test:			PASSWORD=tEREKLz8DFeVpf
+cpppo-test:			CLIENT="Perry Kundert"
+cpppo-test:			CLIENT_PUBKEY="Yhb9q2B4/fX0Ppt7onaJWwcxdgrEw6WrqoX4Bkfpe6k="
+cpppo-test:			GRANTS="{\"cpppo-test\": { \"Hz\": 1000 }}"
+
+cpppo-test:			$(CREDENTIALS)/cpppo-test.crypto-license
+
+
+# Create .crypto-keypair from seed
+$(CREDENTIALS)/%.crypto-keypair: $(CREDENTIALS)/%.crypto-seed
+	$(PY3) -m crypto_licensing -vvv register		\
+	    --username $(USERNAME) --password $(PASSWORD)	 \
+	    --name $(notdir $(basename $@ ))			  \
 	    --seed $$( cat $< )
 
-
-~/.crypto-licensing/crypto-licensing-server.crypto-keypair \
-~/.crypto-licensing/crypto-licensing-server.crypto-license:	~/.crypto-licensing/crypto-licensing-server.crypto-seed
+# Create .crypto-license, signed by .crypto-keypair
+$(CREDENTIALS)/%.crypto-license: $(CREDENTIALS)/%.crypto-keypair
+	$(PY3) -m crypto_licensing -v license			\
+	    --username $(USERNAME) --password $(PASSWORD)	 \
+	    --client $(CLIENT) --client-pubkey $(CLIENT_PUBKEY)	  \
+	    --name $(notdir $(basename $@ ))			   \
+	    --author $(AUTHOR) --domain $(DOMAIN) --product $(PRODUCT)
 
 # 
 # Build, including org-mode products.

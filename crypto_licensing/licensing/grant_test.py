@@ -283,7 +283,7 @@ def test_Grant_smoke():
         "Hz":1000
     }
 }"""
-        assert grant.JSON() == '{"cpppo-test":{"Hz":1000}}'
+        assert grant.serialize(encoding=None) == '{"cpppo-test":{"Hz":1000}}'
         assert Grant().empty()
         assert not grant.empty()
 

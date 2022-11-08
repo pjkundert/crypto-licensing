@@ -1,7 +1,6 @@
 build
 flake8
 pip
-pytest
+pytest		>=4.6
 setuptools
 wheel
-pyinstaller	>= 4.9

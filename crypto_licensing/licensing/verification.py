@@ -92,11 +92,6 @@ class RegistrationError( LicensingError ):
     pass
 
 
-class AlreadyRegistered( RegistrationError ):
-    """Attempt to overwrite an existing Agent ID"""
-    pass
-
-
 class NotRegistered( RegistrationError ):
     pass
 
@@ -271,7 +266,7 @@ def into_JSON( thing, indent=None, default=None, prefix=None ):
     text			= json.dumps(
         thing, sort_keys=True, indent=indent, separators=separators, default=endict )
     if prefix and text:
-        text			= '\n'.join( prefix + l for l in text.splitlines() )
+        text			= '\n'.join( prefix + line for line in text.splitlines() )
     return text
 
 
@@ -393,7 +388,7 @@ def domainkey( product, domain, service=None, pubkey=None ):
     appropriate DKIM TXT RR record containing the agent's public key (base-64 encoded), as per the
     RFC: https://www.rfc-editor.org/rfc/rfc6376.html
 
-        >>> from .verification import author, domainkey
+        >>> from .verification import authoring, domainkey
         >>> path, dkim_rr = domainkey( "Some Product", "example.com" )
         >>> path
         'some-product.crypto-licensing._domainkey.example.com.'
@@ -1816,7 +1811,7 @@ class LicenseSigned( Serializable ):
     A software issuer (or end-user, in the case of machine-specific or numerically limited Licenses)
     must create new Licenses.
 
-        >>> from crypto_licensing import authoring, issue, verify
+        >>> from crypto_licensing import authoring, issue, verify, License, Agent
 
     First, create a Keypair, including both signing (private, .sk) and verifying (public, .vk) keys:
 
@@ -1825,9 +1820,15 @@ class LicenseSigned( Serializable ):
     Then, create a License, identifying the author by their public key, and the product.  This
     example is a perpetual license (no start/length), for any machine.
 
-        >>> license = License( author = "Awesome, Inc.", product = "Awesome Tool", \
-                author_domain = "awesome-inc.com", author_pubkey = signing_keypair.vk, \
-                confirm=False ) # since awesome-inc.com doesn't actually exist...
+        >>> license = License(				\
+                author	= Agent(			 \
+                    name	= "Awesome, Inc.",	  \
+                    domain	= "awesome-inc.com",	   \
+                    product	= "Awesome Tool",	    \
+                    pubkey	= signing_keypair.vk,	     \
+                ),					      \
+                confirm=False,				       \
+        )
 
     Finally, issue the LicenseSigned containing the License and its Ed25519 Signature provenance:
 
@@ -1836,19 +1837,14 @@ class LicenseSigned( Serializable ):
         >>> print( provenance_ser.decode( 'UTF-8' ) )
         {
             "license":{
-                "author":"Awesome, Inc.",
-                "author_domain":"awesome-inc.com",
-                "author_pubkey":"PW847szICqnQBzbdr5TAoGO26RwGxG95e3Vd/M+/GZc=",
-                "author_service":"awesome-tool",
-                "client":null,
-                "client_pubkey":null,
-                "dependencies":null,
-                "length":null,
-                "machine":null,
-                "product":"Awesome Tool",
-                "start":null
+                "author":{
+                    "domain":"awesome-inc.com",
+                    "name":"Awesome, Inc.",
+                    "product":"Awesome Tool",
+                    "pubkey":"PW847szICqnQBzbdr5TAoGO26RwGxG95e3Vd/M+/GZc="
+                }
             },
-            "signature":"MiOGUpkv6/RWzI/C/VP1Ncn7N4WZa0lpiVzETZ4CJsLSo7qGLxIx+X+4tal16CcT+BUW1cDwJtcTftI5z+RHAQ=="
+            "signature":"38gIOyPtcLO0EdElKQDpvUvMkm4xuVR9Ksm2P0ZaFhqo7X3p7dLZidxrNEHyvU8OrSrQA7wmpb+9xweWye8FBg=="
         }
 
 
@@ -1881,21 +1877,16 @@ class LicenseSigned( Serializable ):
         >>> print( provenance_load )
         {
             "license":{
-                "author":"Awesome, Inc.",
-                "author_domain":"awesome-inc.com",
-                "author_pubkey":"PW847szICqnQBzbdr5TAoGO26RwGxG95e3Vd/M+/GZc=",
-                "author_service":"awesome-tool",
-                "client":null,
-                "client_pubkey":null,
-                "dependencies":null,
-                "length":null,
-                "machine":null,
-                "product":"Awesome Tool",
-                "start":null
+                "author":{
+                    "domain":"awesome-inc.com",
+                    "name":"Awesome, Inc.",
+                    "product":"Awesome Tool",
+                    "pubkey":"PW847szICqnQBzbdr5TAoGO26RwGxG95e3Vd/M+/GZc="
+                }
             },
-            "signature":"MiOGUpkv6/RWzI/C/VP1Ncn7N4WZa0lpiVzETZ4CJsLSo7qGLxIx+X+4tal16CcT+BUW1cDwJtcTftI5z+RHAQ=="
+            "signature":"38gIOyPtcLO0EdElKQDpvUvMkm4xuVR9Ksm2P0ZaFhqo7X3p7dLZidxrNEHyvU8OrSrQA7wmpb+9xweWye8FBg=="
         }
-        >>> verify( provenance_load, confirm=False )
+        >>> print( json.dumps( verify( provenance_load, confirm=False, dependencies=False ), default=str ))
         {}
 
     """
@@ -2135,11 +2126,12 @@ def authoring(
     why			= None,
 ):
     """Prepare to begin authoring Licenses, by creating an Ed25519 Keypair."""
-    if seed is None:
-        seed			= token_bytes( 32 )
-    keypair			= ed25519.crypto_sign_keypair( seed )
-    log.info( "Created Ed25519 signing keypair  w/ Public key: {vk_b64}{why}".format(
-        vk_b64=into_b64( keypair.vk ), why=" ({})".format( why ) if why else "" ))
+    keypair			= ed25519.crypto_sign_keypair( seed or token_bytes( 32 ))
+    log.info( "{how} Ed25519 signing keypair  w/ Public key: {pubkey}{why}".format(
+        how	= "Recover" if seed else "Created",
+        pubkey	= into_b64( keypair.vk ),
+        why	= " ({})".format( why ) if why else "",
+    ))
     return keypair
 
 
@@ -2148,61 +2140,105 @@ def register(
     why			= None,
     username		= None,		# The credentials for our agent's Keypair
     password		= None,
+    extension		= None,		# Defaults to exactly match KEYEXTENSION
     basename		= None,
     filename		= None,
     package		= None,
     reverse		= False,        # Default to save from most general location to most specific
     extra		= None,		# any extra path(s) to consider
 ):
-    """Create an authoring Keypair, and save it, returning the Keypair.  Otherwise, raise the last
-    Exception.  By default, attempts to save in the most general (writable) location possible, but
-    will use the CWD if necessary.
+    """Find an existing Keypair w/ the given basename and extension, or create an authoring Keypair
+    and save it, returning the Keypair.  By default, attempts to save in the most general (writable)
+    location possible, but will use the CWD if necessary.  Unlike load_keys, looks for an exact
+    match on the extension, not a pattern -- since that's exactly what we're trying to create.
 
-    Will not overwrite an existing file of the same name, if found!  This is considered an error;
-    you should probably be trying to 'load_keys' before you register a new Agent ID...
+    Will not overwrite an existing file of the same name, if found!  If the Keypair can be loaded
+    with the given credentials, it is considered as registered and returned.  Otherwise, this is
+    considered an error; you already have a Keypair regsitered with perhaps different credentials,
+    and you should probably be trying to 'load_keys' before you register a new Agent ID...
 
     Returns the resultant KeypairEntryped or KeypairPlaintext, w/ a ._from property == path.
 
     """
     if not why:
-        why			= "End-user Keypair"
-    keypair			= authoring( seed=seed, why=why )
-    keypair			= KeypairEncrypted(
-        sk		= keypair.sk,
-        username	= username,
-        password	= password,
-    ) if username and password else KeypairPlaintext(
-        sk		= keypair.sk,
-    )
+        why			= "End-user"
+    # See if the target Keypair already exists somewhere; if so, we don't want to overwrite it -- if
+    # we can successfully load it, then consider the Keypair already registered.
+    log.debug( "Looking for existing {why} Keypair...".format(
+        why	= why,
+    ))
+    try:
+        (_,keypair,_,keypair_raw), = load_keys(
+            extension	= extension or KEYEXTENSION,  # Only files with exactly matching extension
+            username	= username,
+            password	= password,
+            basename	= basename,
+            filename	= filename,
+            package	= package,
+            reverse	= reverse,
+            extra	= extra,
+            detail	= True,
+        )
+    except ValueError as exc:
+        log.info( "Looking for existing {why} Keypair failed: {exc}".format(
+            why		= why,
+            exc		= exc,
+        ))
+        pass
+    else:
+        log.normal( "Found {why} Keypair at {path}: {pubkey}".format(
+            why		= why,
+            path	= keypair._from,
+            pubkey	= into_b64( keypair_raw.vk ),
+        ))
+        return keypair
 
+    # Not already registered.  Lets make certain we can save one!
+    log.debug( "Creating a fresh {why} Keypair...".format(
+        why	= why,
+    ))
     for f in config_open_deduced(
         basename	= basename,
         mode		= "wb",
-        extension	= KEYEXTENSION,
+        extension	= extension or KEYEXTENSION,
         filename	= filename,
         package		= package,
         reverse		= reverse,
         extra		= extra,
         skip		= None,  # For writing/creating, of course we don't want to "skip" anything...
     ):
+        # Successfully opened a file at path f.name for writing (created empty file); Create Keypair
+        keypair_raw		= authoring( seed=seed, why=why )
+        if username and password:
+            keypair		= KeypairEncrypted(
+                sk		= keypair_raw.sk,
+                username	= username,
+                password	= password,
+            )
+        else:
+            keypair		= KeypairPlaintext(
+                sk		= keypair_raw.sk,
+            )
         try:
-            # Successfully opened a file at path f.name for writing (created empty file)
             with f:
                 keypair.save( f )  # keypair._from preserves f.name
         except Exception as exc:
-            log.detail( "Writing End-user Keypair to {path} failed: {exc}".format(
+            log.detail( "Writing {why} Keypair to {path} failed: {exc}".format(
+                why	= why,
                 path	= f.name,
                 exc	= exc,
             ))
             raise NotRegistered( "Failed to register new Keypair: {exc}".format( exc=exc ))
         else:
-            log.normal( "Wrote {why} Keypair to {path}".format(
+            log.normal( "Wrote {why} Keypair to {path}: {pubkey}".format(
                 why	= why,
                 path	= keypair._from,
+                pubkey	= into_b64( keypair_raw.vk ),
             ))
             return keypair
-
-    raise NotRegistered( "Failed to register new Keypair" )
+    raise NotRegistered( "Failed to find a place to save a new {why} Keypair".format(
+        why	= why,
+    ))
 
 
 def issue(
@@ -2250,6 +2286,7 @@ def license(
     grant		= None,
     machine_id_path	= None,
     confirm		= None,		# Validate License' author.pubkey from DNS
+    extension		= None,		# Defaults to exactly match LICEXTENSION
     basename		= None,
     filename		= None,
     package		= None,
@@ -2261,57 +2298,59 @@ def license(
     if necessary.
 
     Will not overwrite an existing file of the same name, if found!  This is considered an error;
-    you should probably be trying to 'check' before you save a License w/ the same basename.
+    you should probably be trying to 'check' before you save a License w/ the same basename and extension.
 
     Returns the resultant LicenseSigned, w/ a ._from property containing the path.
 
     """
     if not why:
-        why			= "End-user License"
-    license			= License(
-        author		= author,
-        client		= client,
-        dependencies	= dependencies,
-        machine		= machine,
-        timespan	= timespan,
-        grant		= grant,
-        machine_id_path	= machine_id_path,
-        confirm		= confirm
-    )
-    provenance			= issue(
-        license,
-        author_sigkey	= author.keypair or author_sigkey,
-        confirm		= confirm,
-        machine_id_path	= machine_id_path
-    )
+        why			= "End-user"
     for f in config_open_deduced(
         basename	= basename,
         mode		= "wb",
-        extension	= LICEXTENSION,
+        extension	= extension or LICEXTENSION,
         filename	= filename,
         package		= package,
         reverse		= reverse,
         extra		= extra,
         skip		= None,  # For writing/creating, of course we don't want to "skip" anything...
     ):
+        lic			= License(
+            author		= author,
+            client		= client,
+            dependencies	= dependencies,
+            machine		= machine,
+            timespan		= timespan,
+            grant		= grant,
+            machine_id_path	= machine_id_path,
+            confirm		= confirm
+        )
+        provenance		= issue(
+            lic,
+            author_sigkey	= author.keypair or author_sigkey,
+            confirm		= confirm,
+            machine_id_path	= machine_id_path
+        )
         try:
             # Successfully opened a file at path f.name for writing (created empty file)
             with f:
                 provenance.save( f )  # LicenseSigned._from preserves f.name
         except Exception as exc:
-            log.detail( "Writing LicenseSigned to {path} failed: {exc}".format(
+            log.detail( "Writing {why} License to {path} failed: {exc}".format(
+                why	= why,
                 path	= f.name,
                 exc	= exc,
             ))
-            raise NotLicensed( "Failed to produce a new License: {exc}".format( exc=exc ))
+            raise NotLicensed( "Failed to save a new License: {exc}".format( exc=exc ))
         else:
             log.normal( "Wrote {why} License to {path}".format(
                 why	= why,
                 path	= provenance._from,
             ))
             return provenance
-
-    raise NotRegistered( "Failed to register new Keypair" )
+    raise NotLicensed( "Failed to find a place to save a new {why} License".format(
+        why	= why,
+    ))
 
 
 def verify(
@@ -2389,9 +2428,8 @@ def load_keys(
     package	= None,		# For deduction of basename
     username	= None,
     password	= None,		# Decryption credentials to use
-    create	= False,        # If no files at all found, then yield None, ... update credentials and create
     every	= False,
-    detail	= False,	# Yield every file w/ origin + credentials info or exception?
+    detail	= False,        # Yield every file w/ origin + credentials info or exception?
     skip	= "*~",
     **kwds                      # eg. extra=["..."], reverse=False, other open() args; see config_open
 ):

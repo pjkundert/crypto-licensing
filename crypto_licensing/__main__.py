@@ -20,7 +20,6 @@ from __future__ import absolute_import, print_function, division
 import click
 import codecs
 import logging
-import json
 
 from .misc	import log_cfg, log_level
 from .		import licensing
@@ -34,6 +33,7 @@ __license__                     = "Dual License: GPLv3 (or later) and Commercial
 
 log				= logging.getLogger( __package__ )
 
+
 #
 # Generate Agent Keypairs and Licenses
 #
@@ -43,19 +43,24 @@ log				= logging.getLogger( __package__ )
 @click.option('-v', '--verbose', count=True)
 @click.option('-q', '--quiet', count=True)
 @click.option('-p', '--private/--no-private', default=False, help="Disclose Private Key material")
-@click.option('-l', '--log', help="Log file name")
-def cli( verbose, quiet, private, log ):
+@click.option('-l', '--log-file', help="Log file name")
+@click.option('-w', '--why', help="What is being done (for logging details)")
+def cli( verbose, quiet, private, log_file, why ):
     cli.verbosity		= verbose - quiet
     log_cfg['level']		= log_level( cli.verbosity )
-    if log:
-        log_cfg['filename']	= log
+    if log_file:
+        log_cfg['filename']	= log_file
     logging.basicConfig( **log_cfg )
     if verbose or quiet:
         logging.getLogger().setLevel( log_cfg['level'] )
     if private:
         cli.private	= True
+    if why:
+        cli.why		= why
+    log.info( "Crypto Licensing CLI: {why!r}".format( why=cli.why ))
 cli.private		= False  # noqa: E305
 cli.verbosity		= 0
+cli.why			= None
 
 @click.command()
 @click.option( "--name", help="Defines the file name Keypair is saved under" )
@@ -100,15 +105,16 @@ def register( name, username, password, seed ):
     If not -q, outputs JSON "<Pubkey>" (or "<Privkey>" if --private)"""
     keypair			= licensing.register(
         seed		= codecs.decode( seed, 'hex_codec' ),
+        why		= cli.why or username,
         username	= username,
         password	= password,
         filename	= name,
         package		= __package__,
     )
+    keypair_raw		= keypair.into_keypair( username=username, password=password )
+    key			= licensing.into_hex( keypair_raw.sk ) if cli.private else licensing.into_b64( keypair_raw.vk )
     if cli.verbosity >= 0:
-        keypair_raw	= keypair.into_keypair( username=username, password=password )
-        key		= licensing.into_hex( keypair_raw.sk ) if cli.private else licensing.into_b64( keypair_raw.vk )
-    click.echo( licensing.into_JSON( key ))
+        click.echo( licensing.into_JSON( key, indent=4 ))
 
 
 @click.command()
@@ -128,18 +134,20 @@ def license( name, username, password, author, domain, product, service, client,
     Won't overwrite existing keypair or license files.
 
     """
-    (path,keypair_raw),		= licensing.load_keys(
-        basename= name,
-        username= username,
-        password= password,
-        create	= True,
+    keypair			= licensing.register(
+        why		= cli.why or product,
+        basename	= name,
+        username	= username,
+        password	= password,
     )
-    click.echo( "Authoring Agent ID {}: {}, from {}".format(
-        "Keypair" if cli.private else "Pubkey",
-        licensing.into_hex( keypair_raw.sk ) if cli.private else licensing.into_b64( keypair_raw.vk ),
-        path
+    keypair_raw			= keypair.into_keypair( username=username, password=password )
+    key				= licensing.into_hex( keypair_raw.sk ) if cli.private else licensing.into_b64( keypair_raw.vk )
+    log.detail( "Authoring Agent ID {what}: {key}, from {path}".format(
+        what	= "Keypair" if cli.private else "Pubkey",
+        key	= key,
+        path	= keypair._from,
     ))
-    license			= licensing.license(
+    lic				= licensing.license(
         author		= licensing.Agent(
             name	= author,
             domain	= domain,
@@ -147,15 +155,18 @@ def license( name, username, password, author, domain, product, service, client,
             service	= service or None,
             keypair	= keypair_raw,
         ),
-        client	= None if not ( client or client_domain or client_pubkey ) else licensing.Agent(
+        client		= None if not ( client or client_domain or client_pubkey ) else licensing.Agent(
             name	= client or "End-User",
             domain	= client_domain,
             pubkey	= client_pubkey
         ),
+        why		= cli.why or product,
         basename	= name,
     )
-    click.echo( "Created License {!r} from {}".format( license, license._from ))
-    log.normal( "{license}".format( license=license ))
+    log.normal( "Created License {!r} in {}".format( lic, lic._from ))
+    if cli.verbosity >= 0:
+        click.echo( licensing.into_JSON( lic, indent=4 ))
+
 
 cli.add_command( register )
 cli.add_command( license )

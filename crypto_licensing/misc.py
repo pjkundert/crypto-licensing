@@ -852,15 +852,16 @@ def config_open( name, mode=None, extra=None, skip=None, reverse=True, overwrite
                 raise ConfigFoundError( gn )
             try:
                 f		= open( gn, mode=mode or 'r', **kwds )
-                log.debug( "config_open opened {fn!r} in mode {mode!r}".format(
-                    fn=f.name, mode=mode ))
-                yield f
             except Exception as exc:
                 # The file couldn't be opened (eg. permissions)
-                log.info( "config_open failed {fn!r} in mode {mode!r}: {exc}".format(
+                log.debug( "config_open failed {fn!r} in mode {mode!r}: {exc}".format(
                     fn=fn, mode=mode,
                     exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
                 pass
+            else:
+                log.info( "config_open opened {fn!r} in mode {mode!r}".format(
+                    fn=f.name, mode=mode ))
+                yield f
 
 
 def deduce_name( basename=None, extension=None, filename=None, package=None ):

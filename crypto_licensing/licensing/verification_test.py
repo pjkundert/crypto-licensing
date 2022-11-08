@@ -872,7 +872,7 @@ def test_licensing_authorize( tmp_path ):
             username	= username,
             password	= password,
             registering	= False,
-            licensing	= False,
+            acquiring	= False,
             basename	= basename,
             machine_id_path = machine_id_path,
             confirm	= False,
