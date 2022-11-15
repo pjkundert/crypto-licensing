@@ -143,17 +143,24 @@ def licensing_bench():
     with multiprocessing.Manager() as m:
 
         licensing_svr_kwds		= dict(
+            # We've got an end-user Keypair encrypted w/ these credentials available in our CFGPATH,
+            # and a matching Crypto Licensing Server License issued to this End User Agent ID's
+            # pubkey.
             argv	= [
+                "-v",
                 "--no-gui",
                 "--config", CFGPATH,
                 "--web", "127.0.0.1:0",
+                "--username", "a@b.c",
+                "--password", "password",
+                #"--log", "/tmp/crypto-licensing-server.log",
                 #"--no-access",		# Do not redirect sys.stdout/stderr to an access log file
                 #"--profile", "licensing.prof", # Optionally, enable profiling (pip install ed25519ll helps...)
             ],
 
             # The master server control dict; 'control' may be converted to a different form (eg. a
             # multiprocessing.Manager().dict()) if necessary.  Each of the Licensing server thread-specific
-            # configs will be provided a reverence to this control (unless, for some reason, you don't want
+            # configs will be provided a reference to this control (unless, for some reason, you don't want
             # them to share it).  If *any* thread shuts down, they will all be stopped.
             server	= dict(
                 control		= m.apidict(

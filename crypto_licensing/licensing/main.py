@@ -1,5 +1,4 @@
 #! /usr/bin/env python3
-
 # -*- coding: utf-8 -*-
 
 #
@@ -43,7 +42,8 @@ try:  # Python2
 except ImportError:  # Python3
     from urllib.parse import unquote
 
-# Used for Web GUI, and for licensing database
+# Used for Web GUI, and for licensing database.  In the future, much of this will transition to
+# Holochain-based infrastructure.
 import web
 import web.httpserver
 import wsgilog
@@ -1802,8 +1802,8 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
                          DISTRIBUTION=licensing.DISTRIBUTION ))
     ap.add_argument( '-R', '--register', action='store_true',
                      default=False,
-                     help="If necessary, create and save a client Keypair" )
-    ap.add_argument( '-L', '--license', action='store_true',
+                     help="If necessary, create and save a new client Keypair" )
+    ap.add_argument( '-A', '--acquire', action='store_true',
                      default=False,
                      help="If no Agent Keypair or License is available, attempt to create and/or obtain one; provide --username/--password to encrypt"
                      ", then use {ENVUSERNAME}/{ENVPASSWORD} environment vars to decrypt".format(
@@ -1881,13 +1881,23 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
         log.warning( "It is recommended to not use '-P|--password ...'; specify '-' to read from input" )
 
     # Cycle through the available Agent ID keys, and any License(s) for Dominion R&D's Crypto
-    # Licensing.  On the first authorization loop, use no username/password if keyboard input
-    # specified; this allows the creation of an unencrypted Agent ID Keypair, if desired, on the
-    # first loop if no new credentials are entered.
-    username			= None if cl_username == '-' else cl_username
-    password			= None if cl_password == '-' else cl_password
-    credential_input		= cl_username == '-' or cl_password == '-'
+    # Licensing.  To create an unencrypted Keypair, no --username/--password may be specified.
+    # Otherwise, we must block here awaiting input.
+    username			= input_secure( "Enter {} username: ".format( basename )) if cl_username == '-' else cl_username
+    password			= input_secure( "Enter {} password: ".format( basename )) if cl_password == '-' else cl_password
+    userpass_input		= cl_username == '-' or cl_password == '-'
     try:
+        # We're looking for a License authored by Dominion R&D Corp.  This might be encapsulated as
+        # one of the dependencies of the License we find (eg. if Dominion issues a License to some
+        # company, which includes the ability to run a crypto-licensing server), but we'll validate
+        # that the Grant was issued by Dominion R&D Corp.  For example, Dominion issues a License to
+        # awesome-inc.com to sub-License crypto-licensing servers.  They, in turn, issue a License
+        # to Лайка.ru to run a crypto-licensing server, and help them set it up.  When
+        # http://crypto-licensing.xn--80aa0aec.ru/ (crypto-licensing.Лайка.ru) issues a License for
+        # their software, part of the fees are paid to awesome-inc.com and some to dominionrnd.com.
+        # The final software installation uses crypto-licensing's authorized() function, which checks
+        # that each successive License's dependencies are correctly signed, and carries the original
+        # 'crypto-licensing' Grant through to the recipient.
         dominion		= licensing.Agent(
             name	= licensing.COMPANY,
             domain	= licensing.DOMAIN,
@@ -1902,14 +1912,15 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
                 product	= args.product,
             )
 
-        authorization		= licensing.authorize(
+        authorization		= licensing.authorized(
             author	= dominion,
             client	= server,
             basename	= basename,
             username	= username,
             password	= password,
             registering	= args.register,        # Issue an Agent ID if none found?
-            acquiring	= args.license,		# Obtain a License if none found?
+            acquiring	= args.acquire,		# Acquire a License if none found?
+            extra	= config_extras,        # including any locally defined config dirs
         )
 
         loaded			= []
@@ -1917,31 +1928,42 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
             if key is None or lic is None:
                 what		= "No License found for Agent ID {}".format(
                     licensing.into_b64( key.vk )) if key else "No Agent ID Keypair found"
-                if credential_input:
+                if userpass_input:
                     what       += "; enter credentials"
                     if password != "-":
                         what   += " (leave blank to register w/ {}: {}".format(
                             username or "(no username)", '*' * len( password or '' ) or "(no password)" )
                 log.warning( what )
+                if not userpass_input:
+                    continue
                 # No Agent ID/License loaded; username/password may be incorrect.  If none provided,
-                # then authorization may go on to register w/ the last-entered username/password
-                if credential_input:
-                    credentials	= False
-                    if cl_username == '-':
-                        username	= input_secure( "Enter {} username: ".format( basename ))
-                        credentials |= bool( username )
-                    if cl_password == '-':
-                        password	= input_secure( "Enter {} password: ".format( basename ))
-                        credentials |= bool( password )
-                    if credentials:
-                        log.detail( "Supplying new credentials for {}: {}".format(
-                            username or "(no username)", '*' * len( password or '' ) or "(no password)" ))
-                        authorization.send( (username,password) )
-                    else:
-                        log.detail( "No new credentials for {}: {}{}".format(
-                            username or "(no username)", '*' * len( password or '' ) or "(no password)",
-                            " (attempting to register new Agent ID)" if args.register else " (authorization failed)" ))
+                # then authorization may go on to register w/ the last-entered username/password.
+                # Either username or password may be updated, if desired.  Usually, credential input
+                # forces you to re-enter something you know to be correct; this loop does not.
+                # Failing to enter both credentials indicates satisfaction -- goes on to register a
+                # new Agent ID w/ credentials, if so.
+                userpass_updated = False
+                if cl_username == '-':
+                    username_update	= input_secure( "Enter {} username (leave empty for no change): ".format( basename ))
+                    userpass_updated |= bool( username_update )
+                    if username_update:
+                        username	= username_update
+                if cl_password == '-':
+                    password_update	= input_secure( "Enter {} password (leave empty for no change): ".format( basename ))
+                    userpass_updated |= bool( password_update )
+                    if password_update:
+                        password	= password_update
+                if userpass_updated:
+                    log.detail( "Supplying new credentials for {}: {}".format(
+                        username or "(no username)", '*' * len( password or '' ) or "(no password)" ))
+                    authorization.send( (username,password) )
+                else:
+                    log.detail( "No new credential(s) for {}: {}{}".format(
+                        username or "(no username)", '*' * len( password or '' ) or "(no password)",
+                        " (attempting to register new Agent ID)" if args.register else " (authorization failed)" ))
+                # No Keypair (or perhaps a Keypair, but no License) found; maybe credentials updated
                 continue
+            # A Keypair and License was found; remember it
             loaded.append( (key,lic) )
 
         # Collect up all the License grants; there may be more than one, if the user has purchased
@@ -1949,7 +1971,7 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
         grants			= licensing.Grant()
         for key,lic in loaded:
             log.normal( "Located Agent Ed25519 Keypair {} w/ License for {}".format(
-                licensing.into_b64( key.vk ), lic and lic.author.product ))
+                licensing.into_b64( key.vk ), lic and lic.license.author.product ))
             grants	       |= lic.grants()
 
         assert dominion.servicekey in grants, \

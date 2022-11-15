@@ -3,6 +3,7 @@ click
 configparser	>=4.0	; python_version < "3.0"
 dnspython
 enum34		>=1.1	; python_version < "3.4"
+future		>=0.18.2
 pathlib2	>=2.3	; python_version < "3.4"
 pytz
 tzlocal

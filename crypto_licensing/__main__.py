@@ -19,7 +19,10 @@ from __future__ import absolute_import, print_function, division
 
 import click
 import codecs
+import json
 import logging
+import os
+import sys
 
 from .misc	import log_cfg, log_level
 from .		import licensing
@@ -57,10 +60,10 @@ def cli( verbose, quiet, private, log_file, why ):
         cli.private	= True
     if why:
         cli.why		= why
-    log.info( "Crypto Licensing CLI: {why!r}".format( why=cli.why ))
 cli.private		= False  # noqa: E305
 cli.verbosity		= 0
 cli.why			= None
+
 
 @click.command()
 @click.option( "--name", help="Defines the file name Keypair is saved under" )
@@ -73,6 +76,14 @@ def check( name, username, password ):
     If not -q, outputs JSON { <key>: [ <lic>, ...], }
 
     """
+    username		= username or os.getenv( licensing.ENVUSERNAME )
+    password		= password or os.getenv( licensing.ENVPASSWORD )
+    log.info( "Checking {why} w/ {username}: {password!r}".format(
+        why		= cli.why or name,
+        username	= username,
+        password	= '*' * len( password ) if password else password,
+    ))
+
     i			= None
     licenses		= {}
     for i,(keypair_raw,lic) in enumerate( licensing.check(
@@ -98,20 +109,36 @@ def check( name, username, password ):
 @click.option( "--name", help="Defines the file name Keypair is saved under" )
 @click.option( "--username", help="The email address (if encrypted Keypair desired))" )
 @click.option( "--password", help="The password" )
+@click.option( "--registering/--no-registering", default=True, help="If no Keypair found, create and register a new one" )
 @click.option( "--seed", help="A 32-byte (256-bit) Seed, in Hex (default: random)" )
-def register( name, username, password, seed ):
-    """Create and save a new Agent ID Ed25519 Keypair.
+def registered( name, username, password, registering, seed ):
+    """Determine if the specified name and credentials are registerd.  Locate (or create and save,
+    by default) an Agent ID Ed25519 Keypair.
 
-    If not -q, outputs JSON "<Pubkey>" (or "<Privkey>" if --private)"""
-    keypair			= licensing.register(
-        seed		= codecs.decode( seed, 'hex_codec' ),
+    If not -q, outputs JSON "<Pubkey>" (or "<Privkey>" if --private)
+
+    """
+    username		= username or os.getenv( licensing.ENVUSERNAME )
+    password		= password or os.getenv( licensing.ENVPASSWORD )
+    log.info( "Registering {why} w/ {username}: {password!r}".format(
+        why		= cli.why or name,
+        username	= username,
+        password	= '*' * len( password ) if password else password,
+    ))
+
+    keypair			= licensing.registered(
+        seed		= codecs.decode( seed, 'hex_codec' ) if seed else None,
         why		= cli.why or username,
         username	= username,
         password	= password,
         filename	= name,
         package		= __package__,
+        registering	= registering,
     )
-    keypair_raw		= keypair.into_keypair( username=username, password=password )
+    keypair_raw		= keypair.into_keypair(
+        username	= username,
+        password	= password,
+    )
     key			= licensing.into_hex( keypair_raw.sk ) if cli.private else licensing.into_b64( keypair_raw.vk )
     if cli.verbosity >= 0:
         click.echo( licensing.into_JSON( key, indent=4 ))
@@ -121,26 +148,53 @@ def register( name, username, password, seed ):
 @click.option( "--name", help="Defines the file name author Keypair read from, License is saved under" )
 @click.option( "--username", help="The email address (if encrypted Keypair))" )
 @click.option( "--password", help="The password" )
+@click.option( "--registering/--no-registering", default=True, help="If no Keypair found, create and register a new one" )
 @click.option( "--author", help="The author's name (eg. 'Awesome, Inc.'" )
 @click.option( "--domain", help="The company's DNS domain (eg. 'awesome.com'" )
 @click.option( "--product", help="The product name, (eg. 'Awesome Product')" )
 @click.option( "--service", help="The DKIM/License Grant key, (default is derived from product, eg. 'awesome-product')" )
+@click.option( "--grant", help="The License's Grants (as JSON)" )
+@click.option( "--dependency", multiple=True, help="Sub-license the specified License (by filename) as one of this License's dependencies" )
+@click.option( "--confirm/--no-confirm", default=True, help="Confirm the signatures via DKIM (default: True)" )
 @click.option( "--client", help="The client's name (eg. 'Example, Inc.'" )
 @click.option( "--client-domain", help="The client's DNS domain (eg. 'example.com'" )
 @click.option( "--client-pubkey", help="The client's Ed25519 Agent ID" )
-def license( name, username, password, author, domain, product, service, client, client_domain, client_pubkey ):
+def license( name, username, password, registering, author, domain, product, service, grant, dependency, confirm, client, client_domain, client_pubkey ):
     """Load/create an Author ID, create/save a LicenseSigned for the specified product.
 
     Won't overwrite existing keypair or license files.
 
+    Appends any specified dependencies without confirming signatures.
     """
-    keypair			= licensing.register(
+    username		= username or os.getenv( licensing.ENVUSERNAME )
+    password		= password or os.getenv( licensing.ENVPASSWORD )
+    log.info( "Licensing {why} w/ {username}: {password!r}".format(
+        why		= cli.why or name,
+        username	= username,
+        password	= '*' * len( password ) if password else password,
+    ))
+
+    dependencies		= []
+    for f in ( open( dep, 'r' ) for dep in dependency ):
+        with f:
+            prov_ser		= f.read()
+            prov_dict		= json.loads( prov_ser )
+            prov		= licensing.LicenseSigned( confirm=confirm, _from=f.name, **prov_dict )
+            log.detail( "Dependency: {prov!r}".format( prov=prov ))
+        dependencies.append( prov )
+
+    # Locate the Agent ID Keypair to use to author the License.  Default to create if not found.
+    keypair			= licensing.registered(
         why		= cli.why or product,
         basename	= name,
         username	= username,
         password	= password,
+        registering	= registering,
     )
-    keypair_raw			= keypair.into_keypair( username=username, password=password )
+    keypair_raw			= keypair.into_keypair(
+        username	= username,
+        password	= password,
+    )
     key				= licensing.into_hex( keypair_raw.sk ) if cli.private else licensing.into_b64( keypair_raw.vk )
     log.detail( "Authoring Agent ID {what}: {key}, from {path}".format(
         what	= "Keypair" if cli.private else "Pubkey",
@@ -160,16 +214,25 @@ def license( name, username, password, author, domain, product, service, client,
             domain	= client_domain,
             pubkey	= client_pubkey
         ),
+        dependencies	= dependencies,
+        grant		= grant,
         why		= cli.why or product,
         basename	= name,
+        confirm		= confirm,
     )
     log.normal( "Created License {!r} in {}".format( lic, lic._from ))
     if cli.verbosity >= 0:
         click.echo( licensing.into_JSON( lic, indent=4 ))
 
 
-cli.add_command( register )
+cli.add_command( registered )
 cli.add_command( license )
 cli.add_command( check )
 
-cli()
+try:
+    cli()
+except Exception as exc:
+    log.warning( "Failed: {exc}".format( exc=exc ))
+    sys.exit( 1 )
+else:
+    sys.exit( 0 )

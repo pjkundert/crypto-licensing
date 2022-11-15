@@ -69,9 +69,9 @@ package_dir			= {
 # Including data in the package is complex: https://sinoroc.gitlab.io/kb/python/package_data.html
 # 
 # Ship the static data for the crypto_licensing.licensing server, and some demo test data.  From the
-# parent of your cpppo source, run:
+# parent of your crypto-licensing source, run:
 # 
-#     rm -f licensing.* && python3 -m cpppo.crypto.licensing -vv --config cpppo/crypto/licensing/licensing_test --no-gui
+#     rm -f licensing.* && python3 -m crypto_licensing.licensing -vv --config cpppo/crypto/licensing/licensing_test --no-gui
 # 
 package_data			= {
     'crypto_licensing/licensing': find_data_files(
@@ -122,7 +122,7 @@ setup(
     long_description		= long_description,
     long_description_content_type = long_description_content_type,
     license			= "Dual License; GPLv3 and Proprietary",
-    keywords			= "Licensing Bitcoin Ethereum cryptocurrency Ed25519 signatures",
+    keywords			= "licensing Bitcoin Ethereum cryptocurrency payments Ed25519 signatures",
     url				= "https://github.com/pjkundert/crypto-licensing",
     classifiers			= classifiers,
 )

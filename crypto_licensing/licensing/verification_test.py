@@ -22,7 +22,7 @@ from .verification import (
     domainkey, domainkey_service, overlap_intersect,
     into_b64, into_hex, into_str, into_str_UTC, into_JSON, into_keys,
     into_Timestamp, into_Duration,
-    authoring, issue, verify, load, load_keys, check, authorize,
+    authoring, issue, verify, load, load_keys, check, authorized,
 )
 from .. import ed25519
 
@@ -745,7 +745,7 @@ def test_licensing_check():
 }"""
 
 
-def test_licensing_authorize( tmp_path ):
+def test_licensing_authorized( tmp_path ):
     # Specific keys/licenses for the -authorize tests
     basename			= deduce_name(
         filename=__file__, package=__package__
@@ -859,9 +859,9 @@ def test_licensing_authorize( tmp_path ):
     # that it was previously saved (eg. when we installed a copy of "EtherNet/IP Tool" here?)  So,
     # we should be able to find it...
     awesome_pubkey, _		= into_keys( awesome_sigkey )
-    authorized			= dict(
+    authorizations		= dict(
         (into_b64( key.vk ) if key else None, lic)
-        for key, lic in authorize(
+        for key, lic in authorized(
             author	= Agent(
                 name	= "Awesome, Inc.",
                 domain	= 'awesome-inc.com',
@@ -884,6 +884,6 @@ def test_licensing_authorize( tmp_path ):
         )
     )
 
-    authorized_str		= into_JSON( authorized, indent=4, default=str )
-    print( "authorized: {}".format( authorized_str ))
-    assert len( authorized ) == 1
+    authorizations_str		= into_JSON( authorizations, indent=4, default=str )
+    print( "authorized: {}".format( authorizations_str ))
+    assert len( authorizations ) == 1

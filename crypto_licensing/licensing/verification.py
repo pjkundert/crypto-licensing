@@ -16,6 +16,7 @@
 #
 
 from __future__ import absolute_import, print_function, division
+from future.utils import raise_from
 
 import ast
 import codecs
@@ -373,7 +374,7 @@ def machine_UUIDv4( machine_id_path=None):
         machine_id		= into_bytes( machine_id, ('hex', ) )
         assert len( machine_id ) == 16
     except Exception as exc:
-        raise RuntimeError( "Invalid Machine ID found: {!r}: {}".format( machine_id, exc ))
+        raise_from( RuntimeError( "Invalid Machine ID found: {!r}: {}".format( machine_id, exc )), exc )
     machine_id			= bytearray( machine_id )
     machine_id[6]	       &= 0x0F
     machine_id[6]	       |= 0x40
@@ -459,7 +460,9 @@ class Serializable( object ):
         """Writes the serialization to the specified open <file> f, remembering the <file>.path"""
         kwds.setdefault( 'indent', 4 )
         kwds.setdefault( 'encoding', 'UTF-8' )
-        f.write( self.serialize( **kwds ))
+        ser			= self.serialize( **kwds )
+        log.debug( "Saving {} bytes to {}".format( len( ser ), f.name ))
+        f.write( ser )
         f.flush()
         self._from		= f.name
         return self._from
@@ -1626,13 +1629,19 @@ class License( Serializable ):
 
         if author_pubkey and author_pubkey != self.author.pubkey:
             raise LicenseIncompatibility(
-                "License for {auth}'s {prod!r} public key mismatch".format(
+                "License for {auth}'s {prod!r} public key mismatch: {lhs} != {rhs}{stack}".format(
                     auth	= self.author.name,
                     prod	= self.author.product,
+                    lhs		= into_b64( author_pubkey ),
+                    rhs		= str( self.author ) if log.isEnabledFor( logging.TRACE ) else into_b64( self.author.pubkey ),
+                    stack	= ''.join( traceback.format_stack() if log.isEnabledFor( logging.DEBUG ) else [] ),
                 ))
         # Verify that the License's stated public key matches the one in the domain's DKIM.  Default
-        # to True when confirm is None.
-        if confirm or confirm is None:
+        # to True when confirm is None.  If the License author declined to provide a .domain and a
+        # .product/.service to deduce a .servicekey (eg. for a License issued locally to an end-user
+        # Agent ID), we don't validate the pubkey.  If you are a License author w/ a DKIM and want
+        # validation, ensure you provide a .domain and a .product/.service when you author Licenses!
+        if ( confirm or confirm is None ) and self.author.domain and self.author.servicekey:
             avkey	 	= self.author.pubkey_query()
             if avkey != self.author.pubkey:
                 raise LicenseIncompatibility(
@@ -2135,7 +2144,7 @@ def authoring(
     return keypair
 
 
-def register(
+def registered(
     seed		= None,
     why			= None,
     username		= None,		# The credentials for our agent's Keypair
@@ -2144,6 +2153,7 @@ def register(
     basename		= None,
     filename		= None,
     package		= None,
+    registering		= True,		# By default, create a new Keypair if none found
     reverse		= False,        # Default to save from most general location to most specific
     extra		= None,		# any extra path(s) to consider
 ):
@@ -2192,11 +2202,25 @@ def register(
             pubkey	= into_b64( keypair_raw.vk ),
         ))
         return keypair
+    if not registering:
+        raise NotRegistered( "Failed to find a {why} Keypair; registering a new one was declined".format(
+            why		= why,
+        ))
 
-    # Not already registered.  Lets make certain we can save one!
-    log.debug( "Creating a fresh {why} Keypair...".format(
-        why	= why,
-    ))
+    # Not already registered, and registering is desired; create one.
+    keypair_raw			= authoring( seed=seed, why=why )
+    if username and password:
+        keypair			= KeypairEncrypted(
+            sk		= keypair_raw.sk,
+            username	= username,
+            password	= password,
+        )
+    else:
+        keypair			= KeypairPlaintext(
+            sk		= keypair_raw.sk,
+        )
+
+    # Successfully created new Keypair; now, try to create file; will not overwrite
     for f in config_open_deduced(
         basename	= basename,
         mode		= "wb",
@@ -2207,18 +2231,6 @@ def register(
         extra		= extra,
         skip		= None,  # For writing/creating, of course we don't want to "skip" anything...
     ):
-        # Successfully opened a file at path f.name for writing (created empty file); Create Keypair
-        keypair_raw		= authoring( seed=seed, why=why )
-        if username and password:
-            keypair		= KeypairEncrypted(
-                sk		= keypair_raw.sk,
-                username	= username,
-                password	= password,
-            )
-        else:
-            keypair		= KeypairPlaintext(
-                sk		= keypair_raw.sk,
-            )
         try:
             with f:
                 keypair.save( f )  # keypair._from preserves f.name
@@ -2235,10 +2247,12 @@ def register(
                 path	= keypair._from,
                 pubkey	= into_b64( keypair_raw.vk ),
             ))
-            return keypair
-    raise NotRegistered( "Failed to find a place to save a new {why} Keypair".format(
-        why	= why,
-    ))
+            break
+    else:
+        raise NotRegistered( "Failed to find a place to save a new {why} Keypair".format(
+            why		= why,
+        ))
+    return keypair
 
 
 def issue(
@@ -2305,16 +2319,7 @@ def license(
     """
     if not why:
         why			= "End-user"
-    for f in config_open_deduced(
-        basename	= basename,
-        mode		= "wb",
-        extension	= extension or LICEXTENSION,
-        filename	= filename,
-        package		= package,
-        reverse		= reverse,
-        extra		= extra,
-        skip		= None,  # For writing/creating, of course we don't want to "skip" anything...
-    ):
+    try:
         lic			= License(
             author		= author,
             client		= client,
@@ -2331,26 +2336,45 @@ def license(
             confirm		= confirm,
             machine_id_path	= machine_id_path
         )
-        try:
-            # Successfully opened a file at path f.name for writing (created empty file)
-            with f:
-                provenance.save( f )  # LicenseSigned._from preserves f.name
-        except Exception as exc:
-            log.detail( "Writing {why} License to {path} failed: {exc}".format(
-                why	= why,
-                path	= f.name,
-                exc	= exc,
-            ))
-            raise NotLicensed( "Failed to save a new License: {exc}".format( exc=exc ))
+    except Exception as exc:
+        log.detail( "Creating {why} License failed: {exc}".format(
+            why		= why,
+            exc		= exc,
+        ))
+        raise NotLicensed( "Failed to save a new License: {exc}".format( exc=exc ))
+    else:
+        # Successfully created License; now, try to create file; will not overwrite
+        for f in config_open_deduced(
+            basename		= basename,
+            mode		= "wb",
+            extension		= extension or LICEXTENSION,
+            filename		= filename,
+            package		= package,
+            reverse		= reverse,
+            extra		= extra,
+            skip		= None,  # For writing/creating, of course we don't want to "skip" anything...
+        ):
+            try:
+                with f:
+                    provenance.save( f )  # LicenseSigned._from preserves f.name
+            except Exception as exc:
+                log.detail( "Writing {why} License to {path} failed: {exc}".format(
+                    why		= why,
+                    path	= f.name,
+                    exc		= exc,
+                ))
+                raise NotLicensed( "Failed to issue new License: {exc}".format( exc=exc ))
+            else:
+                log.normal( "Wrote {why} License to {path}".format(
+                    why		= why,
+                    path	= provenance._from,
+                ))
+                break
         else:
-            log.normal( "Wrote {why} License to {path}".format(
+            raise NotLicensed( "Failed to find a place to save a new {why} License".format(
                 why	= why,
-                path	= provenance._from,
             ))
-            return provenance
-    raise NotLicensed( "Failed to find a place to save a new {why} License".format(
-        why	= why,
-    ))
+        return provenance
 
 
 def verify(
@@ -2528,9 +2552,9 @@ def load_keys(
             try:
                 encrypted	= KeypairEncrypted( **keypair_dict )  # accepts ciphertext, salt
             except TypeError as exc:  # Incorrect arguments, ...
-                raise TypeError( "Keypair w/ keywords {} probably isn't a KeypairEncrypted: {}".format(
+                raise_from( TypeError( "Keypair w/ keywords {} probably isn't a KeypairEncrypted: {}".format(
                     ', '.join( keypair_dict ), exc
-                ))
+                )), exc )
             keypair		= encrypted.into_keypair( username=username, password=password )
             log.info( "Recover Ed25519 KeypairEncrypted w/ Public key: {} (from {}) w/ credentials {} / {}".format(
                 into_b64( keypair.vk ), f_name, username, '*' * len( password )))
@@ -2563,10 +2587,10 @@ def load_keys(
         try:
             try:
                 plaintext	= KeypairPlaintext( **keypair_dict )
-            except TypeError:
-                raise RuntimeError( "Keypair file w/ keywords {} probably isn't a KeypairPlaintext".format(
+            except TypeError as exc:
+                raise_from( RuntimeError( "Keypair file w/ keywords {} probably isn't a KeypairPlaintext".format(
                     ', '.join( keypair_dict )
-                ))
+                )), exc )
             keypair		= plaintext.into_keypair()
             log.isEnabledFor( logging.DEBUG ) and log.debug(
                 "Recover Ed25519 KeypairPlaintext w/ Public key: {} (from {})".format(
@@ -2595,7 +2619,30 @@ def load_keys(
                 f_name=f_name, reasons=', '.join( "{}".format( exc ) for exc in issues[f_name] )))
 
 
-def check(
+def key_lic_sequence_logger( func ):
+    """Logs a sequence of <Keypair>,<License>, including _from (if available)"""
+    def wrapper( *args, **kwds ):
+        labelled		= False
+        for key,lic in func( *args, **kwds ):
+            level		= logging.NORMAL if key and lic else logging.DETAIL
+            if log.isEnabledFor( level ):
+                if not labelled:
+                    log.normal( "{:56} {:20} {:20} {:16}: {}".format(
+                        'License', 'Client', 'Author', 'Product', 'Keypair'
+                    ))
+                    labelled	= True
+                log.log( level, "{:56} {:20.20} {:20.20} {:16.16}: {}{}".format(
+                    'N/A' if not hasattr( lic, '_from' ) or not lic._from else os.path.basename( lic._from ),
+                    'N/A' if not lic or not lic.license.client else "{}/{}".format( lic.license.client.name, into_b64( lic.license.client.pubkey )),
+                    'N/A' if not lic else "{}/{}".format( lic.license.author.name, into_b64( lic.license.author.pubkey )),
+                    'N/A' if not lic or not lic.license.author.product else lic.license.author.product,
+                    'N/A' if not key else into_b64( key.vk ), key._from if hasattr( key, '_from' ) else '',
+                ))
+            yield key,lic
+    return wrapper
+
+
+def check_nolog(
     basename		= None,			# Keypair/License file basename and open mode
     mode		= None,
     extension_keypair	= None,
@@ -2639,26 +2686,20 @@ def check(
 
     """
     # Load any Keypair{Plaintext,Encrypted} available, and convert to a ed25519.Keypair,
-    # ready for signing/verification.
-    keypairs			= {}
-    for key_path, keypair_typed, cred, keypair_or_error in load_keys(
+    # ready for signing/verification.  Retains orders of load_keys / load.
+    keypairs			= list(
+        (key_path, keypair_or_error)
+        for key_path, keypair_typed, cred, keypair_or_error in load_keys(
             basename=basename, mode=mode, extension=extension_keypair,
             filename=filename, package=package,
             every=True, detail=True,
             username=username, password=password,
             skip=skip, **kwds
-    ):
-        if isinstance( keypair_or_error, ed25519.Keypair ):
-            keypairs.setdefault( key_path, keypair_or_error )
-            continue
-        log.info( "{key_path:32}: {exc}".format(
-            key_path=os.path.basename( key_path ), exc=keypair_or_error ))
+        )
+        if isinstance( keypair_or_error, ed25519.Keypair )
+    )
 
-    log.log( logging.DETAIL, "{:48} {}".format( 'File', 'Keypair' ))
-    for n,k in keypairs.items():
-        log.log( logging.DETAIL, "{:48} {}".format( os.path.basename( n ), into_b64( k.vk )))
-
-    licenses			= dict( load(
+    licenses			= list( load(
         basename=basename, mode=mode, extension=extension_license,
         filename=filename, package=package,
         confirm=confirm, machine_id_path=machine_id_path, skip=skip, **kwds
@@ -2667,21 +2708,26 @@ def check(
     # See if license(s) has been (or can be) issued to our Agent keypair(s) (ie. was issued to this
     # keypair as a specific client_pubkey or was non-client-specific, and then was signed by our
     # Keypair), for this Machine ID.
-    if keypairs:
-        log.log( logging.NORMAL, "{:48} {:20} {:20} {}".format( 'File', 'Client', 'Author', 'Product' ))
-    key_seen			= set()
-    for key_path,keypair in keypairs.items():
-        if keypair in key_seen:
+    matches			= 0
+    key_seen			= set()  # of Ed25519.Keypair.vk.  No keys loaded --> yield None,None
+    for key_path,keypair in keypairs:
+        if keypair.vk in key_seen:
+            log.debug( "Ignoring redundant keypair {pubkey} from {path}".format(
+                pubkey	= into_b64( keypair.vk ),
+                path	= key_path,
+            ))
             continue
-        key_seen.add( keypair )
+        key_seen.add( keypair.vk )
 
         # For each unique Keypair, discover any LicenceSigned we've been issued, or can issue.
         lic_path,lic		= None,None	 # If no Licensese found, at all
         prov,reasons		= None,[]        # Why didn't any Licenses qualify?
-        for lic_path, lic in licenses.items():
+        for lic_path,lic in licenses:
             # Was this license issued by our Keypair Agent as the author?  This means that one was
             # issued by some author, with our Keypair Agent as a client, and we (previously) issued
             # and saved it.
+            log.trace( "Evaluate {lic_path:32} / {key_path:32} w/ constrints {constraints!r}".format(
+                lic_path=os.path.basename( lic_path ), key_path=os.path.basename( key_path ), constraints=constraints ))
             try:
                 lic.verify(
                     author_pubkey	= keypair.vk,
@@ -2691,15 +2737,16 @@ def check(
                     **( constraints or {} )
                 )
             except Exception as exc:
-                log.info( "Checked {lic_path:32} / {key_path:32}: {exc}".format(
+                log.info( "Checked  {lic_path:32} / {key_path:32}: {exc}".format(
                     lic_path=os.path.basename( lic_path ), key_path=os.path.basename( key_path ),
                     exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
                 reasons.append( str( exc ))
             else:
                 # This license passed muster w/ the constraints supplied and it was already issued
                 # to us; we're done.
-                prov		= lic
-                break
+                matches	       += 1
+                yield keypair,lic
+                continue
 
             # License not already issued to us; check whether it could be ours w/ some remaining
             # constraints requirements.  We're going to try to issue a sub-License, so include the
@@ -2715,7 +2762,6 @@ def check(
                 log.info( "Verify  {lic_path:32} / {key_path:32}: {exc}".format(
                     lic_path=os.path.basename( lic_path ), key_path=os.path.basename( key_path ),
                     exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
-                reasons.append( str( exc ))
                 continue
 
             # Validated this License is sub-Licensable by this Keypair Agent!  This License is
@@ -2725,7 +2771,7 @@ def check(
             # assuming that the License is sub-licensable by this agent's Keypair as the client; if
             # the License allows anonymous clients (no lic.license.client specified), then make an
             # ad-hoc Agent record.
-            log.log( logging.DETAIL, "Require {requirements!r}".format( requirements=requirements ))
+            log.info( "Require {requirements!r}".format( requirements=requirements ))
             try:
                 author		= lic.license.client
                 if not author:
@@ -2746,27 +2792,30 @@ def check(
                 log.info( "Issuing {lic_path:32} / {key_path:32} failure: {exc}".format(
                     lic_path=os.path.basename( lic_path ), key_path=os.path.basename( key_path ),
                     exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
-                reasons.append( str( exc ))
                 continue
             else:
                 # The License was available to be issued as one of our dependencies, and passed
                 # remaining constraints requirements; Use prov; prov_path remains None.
-                break
+                matches	       += 1
+                yield (keypair,prov)		# Reports <Keypair>,<LicenseSigned>
+        else:
+            if not licenses:
+                yield (keypair,None)		# Reports <Keypair>,None
+    else:
+        if not key_seen:
+            yield (None,None)			# Or None,None if no <Keypair>(s) at all (bad credentials?)
 
-        log.log( logging.DETAIL if prov is None else logging.NORMAL, "{!r:48} {!r:20.20} {!r:20.20} {!r:16.16}: {}".format(
-            'N/A' if not lic_path else os.path.basename( lic_path ),
-            'N/A' if not lic or not lic.license.client else "{}/{}".format( lic.license.client.name, into_b64( lic.license.client.pubkey )),
-            'N/A' if not lic else "{}/{}".format( lic.license.author.name, into_b64( lic.license.author.pubkey )),
-            'N/A' if not lic or not lic.license.author.product else lic.license.author.product,
-            'OK' if prov else ', '.join( reasons )))
-
-        yield (keypair,prov)			# Reports <Keypair>,<LicenseSigned>/None
-
-    if not key_seen:
-        yield (None,None)			# Or None,None if no <Keypair>(s) at all
+    log.debug( "Observed {keys} unique keys: {pubkeys}, {lics} licenses, finding {matches} possible Licenses".format(
+        keys = len( key_seen ), pubkeys=', '.join( into_b64( k ) for k in sorted( key_seen )),
+        lics = len( licenses ), matches = matches,
+    ))
 
 
-def authorize(
+check			= key_lic_sequence_logger( check_nolog )
+
+
+@key_lic_sequence_logger
+def authorized(
     author,					# Details of the author's product we're licensing
     client		= None,			# ..and the intended specific client Agent
     username		= None,			# The credentials for our client Agent's Keypair
@@ -2831,7 +2880,7 @@ def authorize(
             # caller provides new credentials.
             log.normal( "{state}".format( state=state ))
             credentials			= None
-            for key,lic in check(
+            for key,lic in check_nolog(
                 username	= username,
                 password	= password,
                 basename	= basename,
@@ -2929,7 +2978,7 @@ def authorize(
             log.normal( "{state}".format( state=state ))
             if not registering:
                 raise NotRegistered( "No Keypair found; request registering one, or provide different credentials" )
-            key			= register(
+            key			= registered(
                 why		= "End-user Keypair",
                 username	= username,
                 password	= password,
@@ -2937,6 +2986,7 @@ def authorize(
                 filename	= filename,
                 package		= package,
                 reverse		= not reverse if reverse_save is None else reverse_save,
+                registering	= True,
             )
             log.detail( "Created {key}".format( key=key ))
             licenses		= { key: [] }
@@ -2963,7 +3013,7 @@ def authorize(
             key,	= licenses.keys()
             log.normal( "{state}, w/ Agent ID {agent}; attempting licensing".format(
                 state	= state,
-                agent	= into_b64( key ),
+                agent	= into_b64( key.vk ),
             ))
 
         else:
@@ -2972,136 +3022,3 @@ def authorize(
                 keys	= len( licenses ),
                 lics	= sum( len( licenses ) for _,licenses in licenses.items() ),
             ))
-
-
-'''
-def authoring_create(
-    username		= None,
-    password		= None,
-    basename		= None,
-    filename		= None,
-    package		= None,
-    reverse		= None,
-    extra		= None,
-):
-    """Find and open an existing license provenance authoring Keypair, or create and save a new
-    authoring KeyPair.  Will not over-write existing credentials w/ the same name, if found anywhere
-    in the search + extra path(s); will fail instead (assuming that the Keypair already exists, but
-    the username/password were incorrect.)
-
-    """
-    for rf in config_open_deduced(
-                basename	= basename,
-                mode		= "wb",
-                extension	= KEYEXTENSION,
-                filename	= filename,
-                package		= package,
-                reverse		= not reverse if reverse_save is None else reverse_save,
-                extra		= extra,
-                skip		= None,  # For writing/creating, of course we don't want to "skip" anything...
-
-            keypair		= authoring( why="{client} Keypair".format( client=client and client.name or "End-user" ))
-            keypair		= KeypairEncrypted(
-                sk		= keypair.sk,
-                username	= username,
-                password	= password,
-            ) if username and password else KeypairPlaintext(
-                sk		= keypair.sk,
-            )
-            keypair_path	= None
-            # Defaults to save in the most general, to most specific location
-            for f in config_open_deduced(
-                basename	= basename,
-                mode		= "wb",
-                extension	= KEYEXTENSION,
-                filename	= filename,
-                package		= package,
-                reverse		= not reverse if reverse_save is None else reverse_save,
-                extra		= extra,
-                skip		= None,  # For writing/creating, of course we don't want to "skip" anything...
-            ):
-                try:
-                    keypair_path= f.name
-                    log.warning( "Trying {path}".format( path=keypair_path ))
-                    with f:
-                        f.write( keypair.serialize( indent=4, encoding='UTF-8' ))
-                        f.flush()
-                except Exception as exc:
-                    log.detail( "Writing End-user Keypair to {path} failed: {exc}".format(
-                        path	= keypair_path,
-                        exc	= exc,
-                    ))
-                    keypair_path= None
-                else:
-                    log.normal( "Created End-user Keypair in {path}".format(
-                        path	= keypair_path,
-                    ))
-                    break
-
-        elif state is State.LIC:
-            if not license:
-                log.warning( "Unable to locate License, not issuing; cannot proceed" )
-                break
-            #
-            # Found a KeyPair, but no LicenseSigned provenance issued to it.
-            #
-            raise LicenseNotFound()
-
-        # Try to find all available keypairs and licenses.  As soon as we've found *at least* one
-        # Keypair (and maybe a LicenseSigned), switch to the appropriate state, to avoid attempting
-        # to issue a Keypair and/or a License.
-        for key,lic in check(
-            username	= username,
-            password	= password,
-            basename	= basename,
-            filename	= filename,
-            package	= package,
-            confirm	= confirm,
-            machine_id_path = machine_id_path,
-            reverse	= reverse,
-            extra	= extra,
-        ):
-            yield key,lic
-            state	= State.LIC if lic else State.KEY
-
-
-
-def authorize(
-    author,				# The author's product, domain that we're licensing
-    client		= None,		# The client Agent, for the license request
-    **kwds
-):
-    """
-
-    Obtain any LicenseSigned provenances, and sift through them for any that authorize usage of the
-    given author's domain and product, to the given client, for a certain space and time.
-
-    If the period of authorization has expired, confirm with a license server that the LicenseSigned
-    provenance is still valid (hasn't been revoked, eg. for reasons of license fraud, such as
-    someone issuing the LicenseSigned provenance to clients on too many machines). A License without
-    a period is never required to check the server (ie. lasts forever).
-
-    This requires two things:
-
-    1) A client KeyPair identifying the Agent requesting the LicenseSigned provenance from the author.
-
-       - This may require us to open an EncryptedKeypair with a username/password, or perhaps create
-         one (eg. the first time the Agent runs on this machine and/or software installation, or
-         under the authority of this user)
-
-    2) A LicenseSigned from the author issued (signed by) the author, to the client for a certain machine
-       - This indicates that the author was satisfied to authorize the client to use the resource in
-         a certain space (machine) and for a certain time (period)
-
-    """
-
-    # First, scan all licenses to see if we've already got one issued by the specified author
-    found			= False
-    for key,lic in licenses( **kwds ):
-        if author == lic.license.author:
-            yield key,lic
-            found		= True
-    if found:
-        return
-
-'''

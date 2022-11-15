@@ -24,9 +24,10 @@ __license__                     = "Dual License: GPLv3 (or later) and Commercial
 __all__				= [
     'Serializable', 'LicenseIncompatibility', 'License', 'LicenseSigned', 'Agent',
     'domainkey', 'authoring', 'issue', 'verify', 'load', 'load_keys',
-    'check', 'authorize', 'register', 'license', 
+    'check', 'license',  'registered', 'authorized',
     'KeypairEncrypted', 'KeypairPlaintext',
-    'KEYPATTERN', 'LICPATTERN',
+    'KEYPATTERN', 'KEYEXTENSION', 'LICPATTERN', 'LICEXTENSION',
+    'ENVPASSWORD', 'ENVUSERNAME',
 ]
 
 from .defaults		import *
