@@ -8,7 +8,7 @@ import logging
 import os
 import pytest
 
-import pytz
+import dateutil.tz
 
 try:
     import chacha20poly1305
@@ -197,7 +197,7 @@ def test_License_serialization():
 
 
 def test_License_base( monkeypatch ):
-    monkeypatch.setattr( Timestamp, 'LOC', pytz.timezone( "Canada/Mountain" ))
+    monkeypatch.setattr( Timestamp, 'LOC', dateutil.tz.gettz( "Canada/Mountain" ))
     # Issue a License usable by any client, on any machine.  This would be suitable for the
     # "default" or "free" license for a product granting limited functionality, and might be
     # shipped along with the default installation of the software.

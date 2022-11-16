@@ -87,7 +87,7 @@ def test_generators():
     assert list( gen_catches() ) == [0]
 
 
-def test_licensing_issue_query():
+def licensing_issue_query():
     # Issue a license to this machine-id, for client "End User, LLC".
 
     # TODO: XXX: These requests are signed, proving that they came from the holder of the client
@@ -123,7 +123,7 @@ def licensing_cli( number, tests=None, address=None ):
 
     """
     log.info( "Client number={}; starting".format( number ))
-    query			= test_licensing_issue_query()
+    query			= licensing_issue_query()
     url				= "http://{host}:{port}/api/issue.json?{query}&number={number}".format(
         host	= address[0] if address else "localhost",
         port	= address[1] if address else 8000,

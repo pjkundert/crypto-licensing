@@ -36,30 +36,7 @@ import sys
 import time
 import traceback
 
-
-import pytz
-try:
-    from tzlocal import get_localzone
-except ImportError:
-    def get_localzone( _root='/' ):
-        """No tzlocal; support basic Linux systems with a TZ variable or an /etc/timezone file"""
-        # /etc/timezone, ... file?
-        for tzbase in ( 'etc/timezone',			# Debian, Ubuntu, ...
-                        'etc/sysconfig/clock' ): 	# RedHat, ...
-            tzpath		= os.path.join( _root, tzbase )
-            if os.path.exists( tzpath ):
-                with open( tzpath, 'rb' ) as tzfile:
-                    tzname	= tzfile.read().decode().strip()
-                if '#' in tzname:
-                    # eg. 'Somewhere/Special # The Special Zone'
-                    tzname	= tzname.split( '#', 1 )[0].strip()
-                if ' ' in tzname:
-                    # eg. 'America/Dawson Creek'.  Not really correct, but we'll handle it
-                    tzname	= tzname.replace( ' ', '_' )
-                return pytz.timezone( tzname )
-
-        raise pytz.UnknownTimeZoneError( 'Can not find any timezone configuration' )
-
+import dateutil.tz
 
 #
 # Python2/3 Compatibility Types
@@ -534,7 +511,7 @@ def parse_datetime( time, zone=None ):
     timezone name follows the datetime, use it instead of zone/'UTC'.
 
     """
-    tz			= pytz.timezone( zone or 'UTC' )
+    tz			= dateutil.tz.gettz( zone or 'UTC' )
     # First, see if we can split out datetime and a specific timezone.  If not, just try
     # patterns against the supplied time string, unmodified, and default tz to zone/UTC.
     dtzmatch		= parse_datetime.DATETIME_RE.match( time )
@@ -542,7 +519,7 @@ def parse_datetime( time, zone=None ):
         time		= dtzmatch.group( 'dt' )
         zone		= dtzmatch.group( 'tz' )
         if zone:
-            tz		= pytz.timezone( str( zone ))
+            tz		= dateutil.tz.gettz( str( zone ))
 
     # Then, try parsing some time formats w/ timezone data, and convert to the designated timezone
     for fmt in [
@@ -566,7 +543,7 @@ def parse_datetime( time, zone=None ):
         "%Y-%m-%d",
     ]:
         try:
-            return tz.localize( datetime.datetime.strptime( time, fmt ))
+            return datetime.datetime.strptime( time, fmt ).replace( tzinfo=tz )
         except Exception:
             pass
     raise RuntimeError("Couldn't parse datetime from {time!r} w/ time zone {tz!r}".format(
@@ -602,9 +579,23 @@ class Timestamp( datetime.datetime ):
     """A simple Timestamp that can be specified from a Timestamp or datetime.datetime, and is always
     local to a specific timezone, and formats simply and deterministically.
 
+
+    Unfortunately, dateutil is incapable of reliably producing a proper full timezone name for local
+    time.  This is because many OSs supply their local timezone in zone info file
+    eg. /etc/localtime, which contains something like "MST7MDT" instead of "Canada/Mountain".  These
+    short timezone names are non-deterministic: IST could be India Standard Time or Israel Standard
+    Time or Irish Standard Time.  On many *nix OSs, the only way to map the current /etc/localtime
+    to a timezone name is by following the actual symbolic links:
+    
+        /etc/localtime -> /var/db/timezone/zoneinfo/America/Edmonton
+
+    This is not viable.
+
+    So, when we render a Timestamp, we render the numeric offset from UTC, eg. "-0700".
+
     """
-    UTC				= pytz.UTC
-    LOC				= get_localzone()       # from environment TZ, /etc/timezone, etc.
+    UTC				= dateutil.tz.UTC
+    LOC				= dateutil.tz.tzlocal()
 
     _precision			= 3			# How many default sub-second digits
     _epsilon			= 10 ** -_precision     # How small a difference to consider ==
@@ -663,6 +654,12 @@ class Timestamp( datetime.datetime ):
         Falsey, include abbreviation (warning: NOT parsable, because abbreviations are
         non-deterministic!).  If int and Truthy, always include full numeric timezone offset; if
         Falsey; only with non-UTC timezones.
+
+
+        TODO: Does NOT WORK w/ dateutil.tz timezones; these are not reversible to the full zone
+        name, eg. Canada/Mountain; only to the zone offset eg. -0700 or abbreviated (ambiguous) zone
+        name, eg. MST or MDT.  Not even MST7MDT, which could (in theory) be reliably and
+        unambiguously reversed to the zone name eg. Canada/Mountain.
 
         """
         subsecond		= self._precision if ms is True else int( ms ) if ms else 0

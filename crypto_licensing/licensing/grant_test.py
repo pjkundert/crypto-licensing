@@ -5,7 +5,7 @@ import logging
 import pytest
 import random
 
-import pytz
+import dateutil.tz
 
 from dns.exception import DNSException
 
@@ -70,7 +70,7 @@ def test_Timespan_in():
 def test_Timespan_intersection():
     # Note: Assumes TZ="Canada/Mountain"  TODO: remove this assumption to pytest runs cleanly w/ TZ=... in env
     start			= into_Timestamp( '2021-01-01 00:00:00 Canada/Pacific' )
-    mountain			= pytz.timezone( 'Canada/Mountain' )
+    mountain			= dateutil.tz.gettz( 'Canada/Mountain' )
     assert start.render( tzinfo=mountain ) == '2021-01-01 01:00:00.000 Canada/Mountain'
     assert ( start - '1h1m' ).render( tzinfo=mountain ) == '2020-12-31 23:59:00.000 Canada/Mountain'
     #assert repr( timespan ) == "<Timespan('2021-01-01 01:00:00.000 Canada/Mountain','1w1d1h1m1.001s')>"

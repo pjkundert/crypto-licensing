@@ -1,6 +1,6 @@
 import datetime
 
-import pytz
+import dateutil.tz
 
 from .misc	import (
     parse_datetime, parse_seconds, Timestamp, Duration
@@ -13,7 +13,7 @@ def test_Duration():
 
 
 def test_Timestamp( monkeypatch ):
-    monkeypatch.setattr( Timestamp, 'LOC', pytz.timezone( "Canada/Mountain" ))
+    monkeypatch.setattr( Timestamp, 'LOC', dateutil.tz.gettz( "Canada/Mountain" ))
 
     dt			= parse_datetime( "2021-01-01 00:00:00.1 Canada/Pacific" )
     assert isinstance( dt, datetime.datetime )
@@ -29,7 +29,7 @@ def test_Timestamp( monkeypatch ):
     assert ts_int.timestamp() == 0
 
     assert float( ts_dt ) == float( Timestamp( datetime.datetime(
-        year=2021, month=1, day=1, hour=8, minute=0, second=0, microsecond=100000, tzinfo=pytz.UTC
+        year=2021, month=1, day=1, hour=8, minute=0, second=0, microsecond=100000, tzinfo=dateutil.tz.UTC
     )))
 
     assert str( ts_dt ) == "2021-01-01 01:00:00.100 Canada/Mountain"
