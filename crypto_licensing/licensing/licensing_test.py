@@ -9,6 +9,7 @@ import json
 import logging
 import multiprocessing
 import os
+import sys
 import pytest
 
 try:  # Python2
@@ -147,7 +148,7 @@ def licensing_bench():
             # and a matching Crypto Licensing Server License issued to this End User Agent ID's
             # pubkey.
             argv	= [
-                "-v",
+                #"-v",
                 "--no-gui",
                 "--config", CFGPATH,
                 "--web", "127.0.0.1:0",
@@ -205,8 +206,14 @@ def licensing_bench():
     return failed
 
 
-@pytest.mark.skipif( not licensing_main or not web or not network or not chacha20poly1305,
-                     reason="Licensing server needs web.py" )
+@pytest.mark.skipif(
+    not licensing_main
+    or not web
+    or not network
+    or not chacha20poly1305
+    or sys.platform == "darwin" and sys.version_info[0] >= 3,  # _pickle.PicklingError: Can't pickle <class 'multiprocessing.managers.apidict_proxy'>:
+    reason="Licensing server needs web.py, chacha20poly1305, cpppo"
+)
 def test_licensing_bench( tmp_path ):
     print( "Changing CWD to {}".format( tmp_path ))
     os.chdir( str( tmp_path ))

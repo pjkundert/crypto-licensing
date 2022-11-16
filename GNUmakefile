@@ -3,7 +3,6 @@
 # 
 
 # PY[23] is the target Python interpreter.  It must have pytest installed.
-PY		?= python
 PY2		?= python2
 PY3		?= python3
 
@@ -12,9 +11,8 @@ TZ		?= Canada/Mountain
 VERSION		= $(shell $(PY3) -c 'exec(open("crypto_licensing/version.py").read()); print( __version__ )')
 
 # To see all pytest output, uncomment --capture=no ...
-PYTESTOPTS	= --capture=no # --log-cli-level=23 # -vv  --capture=no --log-cli-level=25 # DEBUG # 23 == DETAIL # 25 == NORMAL
+PYTESTOPTS	= # --capture=no --log-cli-level=25 # DEBUG # 23 == DETAIL # 25 == NORMAL
 
-PY_TEST		= TZ=$(TZ) $(PY)  -m pytest $(PYTESTOPTS)
 PY3TEST		= TZ=$(TZ) $(PY3) -m pytest $(PYTESTOPTS)
 PY2TEST		= TZ=$(TZ) $(PY2) -m pytest $(PYTESTOPTS)
 
@@ -33,13 +31,12 @@ help:
 	@echo "  upload			Upload new version to pypi (package maintainer only)"
 	@echo "  clean			Remove build artifacts"
 
-test:
-	$(PY_TEST)
+test:				test23
 test2:
 	$(PY2TEST)
 test3:
 	$(PY3TEST)
-test23:	test3 test2
+test23:				test2 test3
 
 
 doctest:
@@ -221,7 +218,7 @@ install3:	$(WHEEL)
 
 install23:	install2 install3
 
-install:	install3
+install:	install23
 
 
 # Support uploading a new version of slip32 to pypi.  Must:
@@ -236,15 +233,16 @@ clean:
 
 
 # Run only tests with a prefix containing the target string, eg test-blah
-unit-%:
-	$(PY_TEST) -k $*
+unit-%: unit23-%
+	@echo "unit-$*: Python 2/3 Tests completed"
 unit2-%:
 	$(PY2TEST) -k $*
 unit3-%:
 	$(PY3TEST) -k $*
-unit23-%:
-	$(PY2TEST) -k $*
-	$(PY3TEST) -k $*
+unit23-%: unit2-% unit3-%
+	@echo "unit23-$*: Python 2/3 Tests completed"
+
+
 
 #
 # Target to allow the printing of 'make' variables, eg:
