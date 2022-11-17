@@ -36,10 +36,11 @@ import sys
 import time
 import traceback
 
+from functools		import wraps
 
 import pytz
 try:
-    from tzlocal import get_localzone
+    from tzlocal	import get_localzone
 except ImportError:
     def get_localzone( _root='/' ):
         """No tzlocal; support basic Linux systems with a TZ variable or an /etc/timezone file"""
@@ -64,7 +65,7 @@ except ImportError:
 #
 # Python2/3 Compatibility Types
 #
-from numbers	import Number
+from numbers		import Number
 type_str_base			= basestring if sys.version_info[0] < 3 else str  # noqa: F821
 type_num_base			= Number
 
@@ -84,9 +85,14 @@ except NameError:
     unicode			= str
 
 try:
-    from urllib import urlencode			# noqa: F401
+    from urllib		import urlencode, unquote       # noqa: F401
 except ImportError:
-    from urllib.parse import urlencode			# noqa: F401
+    from urllib.parse	import urlencode, unquote       # noqa: F401
+
+try:  # Python2
+    from urllib2	import urlopen, Request		# noqa: F401
+except ImportError:  # Python3
+    from urllib.request	import urlopen, Request		# noqa: F401
 
 try:
     import pathlib					# noqa: F401
@@ -95,10 +101,10 @@ except ImportError:
 
 # Use secrets.token_bytes for random number generation; supply for Python <3.6
 try:
-    from secrets import token_bytes, DEFAULT_ENTROPY
+    from secrets	import token_bytes, DEFAULT_ENTROPY
 except ImportError:
     # Directly from https://github.com/python/cpython/blob/3.10/Lib/secrets.py
-    from random import SystemRandom as _sysrand
+    from random		import SystemRandom as _sysrand
 
     DEFAULT_ENTROPY = 32  # number of bytes to return by default
 
@@ -305,9 +311,10 @@ def log_level( adjust ):
     ]
 
 
-def log_args(func):
+def log_args( func ):
     """Decorator for logging function args, kwds"""
-    def wrapper(*args, **kwds):
+    @wraps( func )
+    def wrapper( *args, **kwds ):
         print('args - ', args)
         print('kwds - ', kwds)
         return func(*args, **kwds)
@@ -325,6 +332,75 @@ if sys.platform == 'win32' and sys.version_info[0:2] < (3,8):
 else:
     # On most other platforms the best timer is time.time
     timer			= time.time
+
+
+def memoize( maxsize=None, maxage=None ):
+    """A very simple memoization wrapper based on (immutable) args only, for simplicity.  Any
+    keyword arguments must be immaterial to the successful outcome, eg. timeout, selection of
+    providers, etc..
+
+    Only successful (non-Exception) outcomes are cached!
+
+    Keeps track of the age (in seconds) and usage (count) of each entry, updating them on each call.
+    When an entry exceeds maxage, it is purged.  If the memo dict exceeds maxsize entries, 10% are
+    purged.
+
+    """
+    def decorator( func ):
+        @wraps( func )
+        def wrapper( *args, **kwds ):
+            now			= timer()
+            # A 0 hits count is our sentinel indicating args not memo-ized
+            last,hits		= wrapper._stat.get( args, (now,0) )
+            if not hits or ( maxage and ( now - last > maxage )):
+                entry = wrapper._memo[args] = func( *args, **kwds )
+                # if hits:
+                #     log.detail( "{} Refreshed {!r} == {!r}".format( wrapper.__name__, args, entry ))
+                # else:
+                #     log.detail( "{} Memoizing {!r} == {!r}".format( wrapper.__name__, args, entry ))
+            else:
+                entry		= wrapper._memo[args]
+                # log.info( "{} Remembers {!r} == {!r}".format( wrapper.__name__, args, entry ))
+            hits	       += 1
+            wrapper._stat[args] = (now,hits)
+
+            if maxsize and len( wrapper._memo ) > maxsize:
+                # Prune size, by ranking each entry by hits/age.  Something w/:
+                #
+                #   2 hits 10 seconds old > 1 hits 6 seconds old > 3 hits 20 seconds old
+                #
+                # Sort w/ the highest rated keys first, so we can just eject all those after 9/10ths of
+                # maxsize.
+                rating		= sorted(
+                    (
+                        (hits / ( now - last + 1 ), key)		# Avoids hits/0
+                        for key,(last,hits) in wrapper._stat.items()
+                    ),
+                    reverse	= True,
+                )
+                for rtg,key in rating[maxsize * 9 // 10:]:
+                    # log.detail( "{} Ejecting  {!r} == {!r} w/ rating {:7.2f}, stats: {}".format(
+                    #     wrapper.__name__, key, wrapper._memo[key], rtg, wrapper._stat[key] ))
+                    del wrapper._stat[key]
+                    del wrapper._memo[key]
+            return entry
+
+        wrapper._memo	= dict()		# { args: entry, ... }
+        wrapper._stat	= dict()		# { args: (<timestamp>, <count>), ... }
+
+        def stats( predicate=None, now=None ):
+            if now is None:
+                now		= timer()
+            cnt,age,avg		= 0,0,0
+            for key,(last,hits) in wrapper._stat.items():
+                if not predicate or predicate( *key ):
+                    cnt	       += 1
+                    age	       += now-last
+                    avg	       += hits
+            return cnt,age/(cnt or 1),avg/(cnt or 1)
+        wrapper.stats		= stats
+        return wrapper
+    return decorator
 
 
 #
@@ -920,3 +996,9 @@ def input_secure( prompt, secret=True, file=None ):
         if file:
             return file.readline()
         return input()
+
+
+def gray( p ):
+    #grayscale			= '''$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\|()1{}[]?-_+~<>i!lI;:,"^`'.'''
+    grayscale			= '''$EFLlv!;,.'''
+    return grayscale[-1 - max( 0, min( len( grayscale )-1, int( p * len( grayscale ))))]

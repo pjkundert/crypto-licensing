@@ -37,11 +37,6 @@ import time
 import traceback
 import warnings
 
-try:  # Python2
-    from urllib import unquote
-except ImportError:  # Python3
-    from urllib.parse import unquote
-
 # Used for Web GUI, and for licensing database.  In the future, much of this will transition to
 # Holochain-based infrastructure.
 import web
@@ -51,7 +46,8 @@ import wsgilog
 from ..misc		import (
     timer, Timestamp,
     log_cfg, log_levelmap, log_level,
-    config_paths, config_open, ConfigNotFoundError
+    config_paths, config_open, ConfigNotFoundError,
+    unquote
 )
 from ..			import licensing
 from ..misc		import input_secure

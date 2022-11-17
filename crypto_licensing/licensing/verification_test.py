@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
 
+from __future__ import absolute_import, print_function, division
+try:
+    from future_builtins import zip, map  # noqa: F401; Use Python 3 "lazy" zip, map
+except ImportError:
+    pass
+
 import binascii
 import codecs
 import copy
@@ -15,8 +21,8 @@ try:
 except ImportError:
     chacha20poly1305		= None
 
-from dns.exception import DNSException
-from .verification import (
+from dns.exception	import DNSException
+from .verification	import (
     License, LicenseSigned, LicenseIncompatibility, Timespan, Agent,
     KeypairPlaintext, KeypairEncrypted, machine_UUIDv4,
     domainkey, domainkey_service, overlap_intersect,
@@ -24,12 +30,12 @@ from .verification import (
     into_Timestamp, into_Duration,
     authoring, issue, verify, load, load_keys, check, authorized,
 )
-from .. import ed25519
+from ..			import ed25519
 
-from ..misc import (
+from ..misc 		import (
     deduce_name, Timestamp
 )
-from .defaults import LICEXTENSION
+from .defaults		import LICEXTENSION
 
 log				= logging.getLogger( "verification_test" )
 

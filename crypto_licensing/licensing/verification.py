@@ -32,6 +32,7 @@ import sys
 import traceback
 import uuid
 
+from functools		import wraps
 from enum		import Enum
 
 from .defaults		import (
@@ -2621,6 +2622,7 @@ def load_keys(
 
 def key_lic_sequence_logger( func ):
     """Logs a sequence of <Keypair>,<License>, including _from (if available)"""
+    @wraps( func )
     def wrapper( *args, **kwds ):
         labelled		= False
         for key,lic in func( *args, **kwds ):

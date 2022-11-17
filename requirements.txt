@@ -1,7 +1,6 @@
 chacha20poly1305>=0.0.3
 click
 configparser	>=4.0	; python_version < "3.0"
-dnspython
 enum34		>=1.1	; python_version < "3.4"
 future		>=0.18.2
 pathlib2	>=2.3	; python_version < "3.4"
@@ -9,3 +8,5 @@ pytz
 tzlocal
 web.py		>=0.51
 wsgilog		>=0.3
+requests
+certifi

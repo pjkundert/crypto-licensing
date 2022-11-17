@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+
 from __future__ import absolute_import, print_function, division, unicode_literals
 try:
     from future_builtins import zip, map  # noqa: F401; Use Python 3 "lazy" zip, map
@@ -12,12 +13,7 @@ import os
 import sys
 import pytest
 
-try:  # Python2
-    from urllib2 import urlopen
-except ImportError:  # Python3
-    from urllib.request import urlopen
-
-from ..misc		import reprlib
+from ..misc		import reprlib, urlopen
 from ..			import licensing
 
 # If web.py or cpppo is unavailable, licensing.main cannot be used
@@ -87,7 +83,7 @@ def test_generators():
     assert list( gen_catches() ) == [0]
 
 
-def test_licensing_issue_query():
+def licensing_issue_query():
     # Issue a license to this machine-id, for client "End User, LLC".
 
     # TODO: XXX: These requests are signed, proving that they came from the holder of the client
@@ -123,7 +119,7 @@ def licensing_cli( number, tests=None, address=None ):
 
     """
     log.info( "Client number={}; starting".format( number ))
-    query			= test_licensing_issue_query()
+    query			= licensing_issue_query()
     url				= "http://{host}:{port}/api/issue.json?{query}&number={number}".format(
         host	= address[0] if address else "localhost",
         port	= address[1] if address else 8000,
@@ -131,7 +127,7 @@ def licensing_cli( number, tests=None, address=None ):
         number	= number,
     )
     log.detail( "Client number={}; url: {}".format( number, reprlib.repr( url )))
-    response			= urlopen( url ).read().decode('utf-8')
+    response			= urlopen( url ).read().decode( 'UTF-8' )
     assert response
     log.detail( "Client number={}; response: {}".format( number, reprlib.repr( response )))
     data			= json.loads( response )

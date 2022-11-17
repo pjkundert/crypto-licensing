@@ -51,3 +51,8 @@ KEYPATTERN			= 'crypto-key*'
 #
 ENVPASSWORD			= 'CRYPTO_LIC_PASSWORD'
 ENVUSERNAME			= 'CRYPTO_LIC_USERNAME'
+
+
+# How many DNS-over-HTTPS (DoH) requests should we cache?
+DOHMAXSIZE			= 128
+DOHMAXAGE			= 86400

@@ -11,7 +11,7 @@ TZ		?= Canada/Mountain
 VERSION		= $(shell $(PY3) -c 'exec(open("crypto_licensing/version.py").read()); print( __version__ )')
 
 # To see all pytest output, uncomment --capture=no ...
-PYTESTOPTS	= # --capture=no --log-cli-level=25 # DEBUG # 23 == DETAIL # 25 == NORMAL
+PYTESTOPTS	= # --capture=no --log-cli-level=INFO  # DEBUG # 23 == DETAIL # 25 == NORMAL
 
 PY3TEST		= TZ=$(TZ) $(PY3) -m pytest $(PYTESTOPTS)
 PY2TEST		= TZ=$(TZ) $(PY2) -m pytest $(PYTESTOPTS)
