@@ -403,7 +403,6 @@ def domainkey( product, domain, service=None, pubkey=None ):
         'something-awesome-v1-0.crypto-licensing._domainkey.awesome-inc.com.'
         >>> dkim_rr
         'v=DKIM1; k=ed25519; p=25lf4lFp0UHKubu6krqgH58uHs599MsqwFGQ83/MH50='
-
     """
     if service is None:
         service			= domainkey_service( product )

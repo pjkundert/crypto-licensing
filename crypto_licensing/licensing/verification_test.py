@@ -83,6 +83,16 @@ def test_License_domainkey():
     assert path == 'xn--raspberry--1qh.crypto-licensing._domainkey.xn--8dbaco.email.'
     assert dkim_rr == 'v=DKIM1; k=ed25519; p=25lf4lFp0UHKubu6krqgH58uHs599MsqwFGQ83/MH50='
 
+    # "Лайка.ru" wants to run a crypto-licensing server, selling  "Raspberry π"
+    # http://crypto-licensing.xn--80aa0aec.ru/ (crypto-licensing.Лайка.ru)
+    path, dkim_rr = domainkey( u"Raspberry π", u"Лайка.ru", pubkey=author_keypair )
+    assert path == 'xn--raspberry--1qh.crypto-licensing._domainkey.xn--80aa0aec.ru.'
+    # And make certain round-tripping punycoded domain names doesn't break
+    path, dkim_rr = domainkey( "xn--raspberry--1qh", "xn--80aa0aec.ru", pubkey=author_keypair )
+    assert path == 'xn--raspberry--1qh.crypto-licensing._domainkey.xn--80aa0aec.ru.'
+    path, dkim_rr = domainkey( u"xn--raspberry--1qh", u"xn--80aa0aec.ru", pubkey=author_keypair )
+    assert path == 'xn--raspberry--1qh.crypto-licensing._domainkey.xn--80aa0aec.ru.'
+
 
 def test_License_overlap():
     """A License can only issued while all the sub-Licenses are valid.  The start/length should "close"

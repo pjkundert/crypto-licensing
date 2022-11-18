@@ -95,7 +95,7 @@ class DoH_Provider( Enum ):
 
 
 @memoize( maxsize=DOHMAXSIZE, maxage=DOHMAXAGE )
-def query_raw( domain, record_type, provider=None, timeout=5 ):
+def query_cached( domain, record_type, provider=None, timeout=5 ):
 
     if provider in ( None, DoH_Provider.GOOGLE ):
         #url			= 'https://dns.google/resolve'
@@ -139,10 +139,16 @@ def query_raw( domain, record_type, provider=None, timeout=5 ):
 
 
 def query( domain, record=None, provider=None, timeout=5.0 ):
-    """Return a list of dicts containing the response(s) to the DNS record query."""
+    """Return a list of dicts containing the response(s) to the DNS record query.
 
-    # TODO: convert any UTF-8 in domain to punycode using codecs.getencoder( 'idna' )?
+    We assume that the domain is already properly encoded, ie. transformed from UTF-8 to punycode.
+
+    Transform the record into a DNSRecord Enum; the first 2 args of query_cached are memoized, so
+    ensure they are of the expected type.
+
+    """
     try:
+        assert isinstance( domain, type_str_base )
         # Convert a string DNS record name eg. 'TXT' to Enum DNSRecord.TXT == 16
         if isinstance( record, type_str_base ):
             record_type,	= ( t for t in DNSRecord if t.name == record )
@@ -152,4 +158,4 @@ def query( domain, record=None, provider=None, timeout=5.0 ):
     except Exception as exc:
         raise_from( DoHError( "Invalid DNS-over-HTTPS record {!r}".format( record )), exc )
 
-    return query_raw( domain, record_type, provider=provider, timeout=timeout )
+    return query_cached( domain, record_type, provider=provider, timeout=timeout )

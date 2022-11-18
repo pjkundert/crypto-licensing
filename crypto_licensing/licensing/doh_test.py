@@ -37,9 +37,9 @@ def test_doh_smoke():
     print( repr( request.header_items() ))
 
     # Will fail, due to not having access to CA certificates.  Crazily, this prevents it from
-    # working, unless you actually patch the system SSL with a symbolic link (!?).
+    # working, unless you actually patch the system SSL with a symbolic link to the certifi certs.
     try:
-        response			= urlopen( request ).read()
+        response		= urlopen( request ).read()
         print( repr( response ))
         print( repr( response.full_url ))
         reply			= json.loads( response.decode( 'UTF-8' ))
@@ -48,7 +48,7 @@ def test_doh_smoke():
         print( str( exc ))
         pass
 
-    # Now use requests.  Verifies SSL connections correctly, in Python 2 and 3
+    # Now use requests.  Verifies SSL connections correctly, in Python 2 and 3 using certifi certs.
     response			= requests.get( url, params=payload, headers=headers, verify=True )
     print( response )
     print( response.url )
@@ -62,6 +62,17 @@ def test_doh_smoke():
 
 
 def test_doh_api():
-    recs			= doh.query( 'crypto-licensing.crypto-licensing._domainkey.dominionrnd.com', 'TXT' )
+    recs			= doh.query(
+        'crypto-licensing.crypto-licensing._domainkey.dominionrnd.com', 'TXT' )
+    print( json.dumps( recs ) )
+
     assert len( recs ) == 1
-    assert recs[0].get( 'data' ) == 'v=DKIM1; k=ed25519; p=5cijeUNWyR1mvbIJpqNmUJ6V4Od7vPEgVWOEjxiim8w='
+    assert recs[0].get( 'data' ) \
+        == 'v=DKIM1; k=ed25519; p=5cijeUNWyR1mvbIJpqNmUJ6V4Od7vPEgVWOEjxiim8w='
+
+    # Now ensure multi-record (long) TXT entries are properly handled.
+    recs			= doh.query(
+        'default._domainkey.justicewall.com', 'TXT' )
+    print( json.dumps( recs ) )
+    assert recs[0].get( 'data' ) \
+        == "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0PMv4yXqvYlPWxCt7ZjdfR9Q4GzkGhxIEqxFTQEsPF0GxpZPr54GTiMsvmWxsrJWCb9OFo5qx48lPnHu1Y/KZcx6xydZiNxYdGedcRZFtMAwQAKQgo2Iq28PamZf5D8BO1+rg9tlAo2vYKrp6Cf1zTxDqHzSVl85RA7PZj1Jb/7jpqujT1SRXngrerB4iYBtx"  "aPXTN/aI+cvS8kREW7tYkb4nt2fK3sb2RtCe5hxGTOdtIie/stZj/w/5ozsrtEZ6CiGQA38IaVOFsGwAvmhucy08UzbycmXKYsJiWPpSyXBXSX+O+5WaqgOYvcGT9CHBBWoFJG37Qf4KHoQqhS7IwIDAQAB;"

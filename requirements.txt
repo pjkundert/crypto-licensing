@@ -8,5 +8,6 @@ pytz
 tzlocal
 web.py		>=0.51
 wsgilog		>=0.3
+dnspython
 requests
 certifi
