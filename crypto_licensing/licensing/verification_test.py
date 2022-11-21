@@ -26,9 +26,10 @@ from .verification	import (
     License, LicenseSigned, LicenseIncompatibility, Timespan, Agent,
     KeypairPlaintext, KeypairEncrypted, machine_UUIDv4,
     domainkey, domainkey_service, overlap_intersect,
-    into_b64, into_hex, into_str, into_str_UTC, into_JSON, into_keys,
+    into_b64, into_hex, into_str, into_str_UTC, into_JSON, into_keys, into_bytes,
     into_Timestamp, into_Duration,
     authoring, issue, verify, load, load_keys, check, authorized,
+    DKIM_pubkey, DKIMError,
 )
 from ..			import ed25519
 
@@ -62,6 +63,14 @@ def test_Agent():
     "name":"Someone",
     "pubkey":"O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik="
 }"""
+
+
+def test_DKIM():
+    assert DKIM_pubkey( 'v=DKIM1; k=ed25519; p=25lf4lFp0UHKubu6krqgH58uHs599MsqwFGQ83/MH50=' ) \
+        == into_bytes( '25lf4lFp0UHKubu6krqgH58uHs599MsqwFGQ83/MH50=', ('base64',) )
+    with pytest.raises( DKIMError ) as exc_info:
+        DKIM_pubkey( 'v=DKIM2; k=ed25519; p=25lf4lFp0UHKubu6krqgH58uHs599MsqwFGQ83/MH50=' )
+    assert "Failed to find 'DKIM1' record" in str( exc_info )
 
 
 def test_License_domainkey():

@@ -94,9 +94,8 @@ class DoH_Provider( Enum ):
     CLOUDFLARE	= 1
 
 
-@memoize( maxsize=DOHMAXSIZE, maxage=DOHMAXAGE )
+@memoize( maxsize=DOHMAXSIZE, maxage=DOHMAXAGE, log_at=logging.DEBUG )
 def query_cached( domain, record_type, provider=None, timeout=5 ):
-
     if provider in ( None, DoH_Provider.GOOGLE ):
         #url			= 'https://dns.google/resolve'
         url			= 'https://8.8.8.8/resolve'

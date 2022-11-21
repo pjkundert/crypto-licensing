@@ -75,4 +75,6 @@ def test_doh_api():
         'default._domainkey.justicewall.com', 'TXT' )
     print( json.dumps( recs ) )
     assert recs[0].get( 'data' ) \
-        == "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0PMv4yXqvYlPWxCt7ZjdfR9Q4GzkGhxIEqxFTQEsPF0GxpZPr54GTiMsvmWxsrJWCb9OFo5qx48lPnHu1Y/KZcx6xydZiNxYdGedcRZFtMAwQAKQgo2Iq28PamZf5D8BO1+rg9tlAo2vYKrp6Cf1zTxDqHzSVl85RA7PZj1Jb/7jpqujT1SRXngrerB4iYBtx"  "aPXTN/aI+cvS8kREW7tYkb4nt2fK3sb2RtCe5hxGTOdtIie/stZj/w/5ozsrtEZ6CiGQA38IaVOFsGwAvmhucy08UzbycmXKYsJiWPpSyXBXSX+O+5WaqgOYvcGT9CHBBWoFJG37Qf4KHoQqhS7IwIDAQAB;"
+        == "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0PMv4yXqvYlPWxCt7ZjdfR9Q4GzkGhxIEqxFTQEsPF0GxpZPr54GTiMsvmWxsrJWCb9OFo5qx48lPnHu1Y/KZcx6"\
+        "xydZiNxYdGedcRZFtMAwQAKQgo2Iq28PamZf5D8BO1+rg9tlAo2vYKrp6Cf1zTxDqHzSVl85RA7PZj1Jb/7jpqujT1SRXngrerB4iYBtx" \
+        "aPXTN/aI+cvS8kREW7tYkb4nt2fK3sb2RtCe5hxGTOdtIie/stZj/w/5ozsrtEZ6CiGQA38IaVOFsGwAvmhucy08UzbycmXKYsJiWPpSyXBXSX+O+5WaqgOYvcGT9CHBBWoFJG37Qf4KHoQqhS7IwIDAQAB;"

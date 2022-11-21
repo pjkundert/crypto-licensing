@@ -334,7 +334,7 @@ else:
     timer			= time.time
 
 
-def memoize( maxsize=None, maxage=None ):
+def memoize( maxsize=None, maxage=None, log_at=None ):
     """A very simple memoization wrapper based on (immutable) args only, for simplicity.  Any
     keyword arguments must be immaterial to the successful outcome, eg. timeout, selection of
     providers, etc..
@@ -345,6 +345,7 @@ def memoize( maxsize=None, maxage=None ):
     When an entry exceeds maxage, it is purged.  If the memo dict exceeds maxsize entries, 10% are
     purged.
 
+    Optionally logs when we memoize something, at level log_at.
     """
     def decorator( func ):
         @wraps( func )
@@ -354,13 +355,14 @@ def memoize( maxsize=None, maxage=None ):
             last,hits		= wrapper._stat.get( args, (now,0) )
             if not hits or ( maxage and ( now - last > maxage )):
                 entry = wrapper._memo[args] = func( *args, **kwds )
-                # if hits:
-                #     log.detail( "{} Refreshed {!r} == {!r}".format( wrapper.__name__, args, entry ))
-                # else:
-                #     log.detail( "{} Memoizing {!r} == {!r}".format( wrapper.__name__, args, entry ))
+                if log_at and log.isEnabledFor( log_at ):
+                    if hits:
+                        log.log( log_at, "{} Refreshed {!r} == {!r}".format( wrapper.__name__, args, entry ))
+                    else:
+                        log.log( log_at, "{} Memoizing {!r} == {!r}".format( wrapper.__name__, args, entry ))
             else:
                 entry		= wrapper._memo[args]
-                # log.info( "{} Remembers {!r} == {!r}".format( wrapper.__name__, args, entry ))
+                #log.detail( "{} Remembers {!r} == {!r}".format( wrapper.__name__, args, entry ))
             hits	       += 1
             wrapper._stat[args] = (now,hits)
 

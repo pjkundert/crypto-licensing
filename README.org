@@ -1,4 +1,6 @@
 #+title: Cryptographically Signed License Issuance with Payment in Cryptocurrency
+#+author: Perry Kundert
+#+email: perry@kundert.ca
 #+date: 2022-01-25 12:32:00
 #+draft: false
 #+EXPORT_FILE_NAME: README.pdf
@@ -17,7 +19,7 @@
       org-src-preserve-indentation t
       org-edit-src-content-indentation 0
       org-confirm-babel-evaluate nil
-get a)
+)
 nil
 #+END_SRC
 

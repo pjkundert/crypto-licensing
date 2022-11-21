@@ -125,6 +125,8 @@ def test_Timestamp( monkeypatch ):
 
 
 memoize_count		= 1000000
+
+
 def test_memoize_speed_raw():
     def adder_raw( a, b ):
         return a + b + ( adder_raw( a//2, b//2 ) if a or b else 0 )
@@ -169,8 +171,10 @@ def test_memoize():
     cells			= hi * hi
     mid				= hi // 2
     big,sml			= hi * 3 / 4, hi * 1 / 4
+
     def one():
         return int( random.triangular( lo, hi, big ))
+
     def two():
         return int( random.triangular( lo, hi, sml ))
 

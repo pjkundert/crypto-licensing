@@ -18,11 +18,9 @@
 from __future__ import absolute_import, print_function, division
 from future.utils import raise_from
 
-import ast
 import codecs
 import copy
 import datetime
-import dns.resolver
 import hashlib
 import json
 import logging
@@ -35,6 +33,9 @@ import uuid
 from functools		import wraps
 from enum		import Enum
 
+import dns.name
+
+from . 			import doh
 from .defaults		import (
     DISTRIBUTION, LICPATTERN, LICEXTENSION, KEYPATTERN, KEYEXTENSION,
 )
@@ -96,6 +97,46 @@ class RegistrationError( LicensingError ):
 
 class NotRegistered( RegistrationError ):
     pass
+
+
+class DKIMError( LicensingError ):
+    pass
+
+
+def DKIM_pubkey( dkim, v="DKIM1", k="Ed25519" ):
+    """Return a validated base-64 decoded DKIM v1 Ed25519 pubkey from the supplied DKIM TXT
+    record, or raise a DKIMError."""
+    log.debug("Parsing DKIM record: {dkim!r}".format( dkim=dkim ))
+    try:
+        dkim_valid		= dict(
+            v	= lambda v: v.upper(),
+            k	= lambda k: k.upper(),
+            p	= lambda p: into_bytes( p.strip(), ('base64',) ),
+        )
+        dkim_kvs		= dict(
+            kv.strip().split( '=', 1 )
+            for kv in dkim.split( ';' )
+        )
+        dkim_rec		= dict(
+            (k.strip().lower(), dkim_valid.get( k.strip().lower(), lambda x: x )( v.strip() ))
+            for k,v in dkim_kvs.items()
+        )
+        assert set( dkim_valid.keys() ) <= set( dkim_rec.keys() ), \
+            "DKIM record missing key {}".format( ', '.join( set( dkim_valid.keys() ) - set( dkim_rec.keys() )))
+        assert dkim_rec['v'] == dkim_valid['v']( v ), \
+            "Failed to find {!r} record; instead found record of type/version {!r}".format( v, dkim_rec['v'] )
+        assert dkim_rec['k'] == dkim_valid['k']( k ), \
+            "Failed to find {!r} public key; instead was of type {!r}".format( k, dkim_rec['k'] )
+    except Exception as exc:
+        raise_from( DKIMError(
+            "Failed to locate {k} public key in TXT {v} record {dkim}: {exc}".format(
+                k	= k,
+                v	= v,
+                dkim	= dkim,
+                exc	= exc,
+            )
+        ), exc )
+    return dkim_rec['p']
 
 
 def domainkey_service( product ):
@@ -406,8 +447,8 @@ def domainkey( product, domain, service=None, pubkey=None ):
     """
     if service is None:
         service			= domainkey_service( product )
-    assert service and domain, \
-        "A service and domain is required to deduce the DKIM DNS path"
+    if not ( service and domain ):
+        raise DKIMError( "A service and domain is required to deduce the DKIM DNS path" )
     domain_name			= dns.name.from_text( domain )
     service_name		= dns.name.Name( [service, DISTRIBUTION, '_domainkey'] )
     path_name			= service_name + domain_name
@@ -884,6 +925,15 @@ class Agent( Serializable ):
 
         Query the DKIM record for an author public key.  May be split into multiple strings:
 
+        Use DNS-over-HTTPS, to ensure we receive a valid TXT record for the specified domain:
+
+            >>> from . import doh
+            >>> results = doh.query( 'crypto-licensing.crypto-licensing._domainkey.dominionrnd.com', 'TXT' )
+            >>> assert results[0]['data'] == 'v=DKIM1; k=ed25519; p=5cijeUNWyR1mvbIJpqNmUJ6V4Od7vPEgVWOEjxiim8w='
+
+        We used to do this, but it was insecure, because anyone could implement their own
+        DNS resolver yielding any TXT they wished:
+
             r = dns.resolver.query('default._domainkey.justicewall.com', 'TXT')
             for i in r:
             ...  i.to_text()
@@ -892,35 +942,24 @@ class Agent( Serializable ):
 
         Fortunately, the Python AST for string literals handles this quite nicely:
 
-            >>> ast.literal_eval('"abc" "123"')
+            ast.literal_eval('"abc" "123"')
             'abc123'
 
         """
         dkim_path, _dkim_rr	= self.domainkey
         log.debug("Querying {domain} for DKIM service {service}: {dkim_path}".format(
-            domain=self.domain, service=self.service, dkim_path=dkim_path ))
-        # Python2/3 compatibility; use query vs. resolve
-        records			= list( rr.to_text() for rr in dns.resolver.query( dkim_path, 'TXT' ))
+            domain=self.domain, service=self.service, dkim_path=dkim_path
+        ))
+        records			= doh.query( dkim_path, 'TXT' )
         assert len( records ) == 1, \
             "Failed to obtain a single TXT record from {dkim_path}".format( dkim_path=dkim_path )
-        # Parse the "..." "..." strings.  There should be no escaped quotes.
-        dkim			= ast.literal_eval( records[0] )
-        log.debug("Parsing DKIM record: {dkim!r}".format( dkim=dkim ))
-        p			= None
-        for pair in dkim.split( ';' ):
-            key,val 		= pair.strip().split( '=', 1 )
-            if key.strip().lower() == "v":
-                assert val.upper() == "DKIM1", \
-                    "Failed to find DKIM record; instead found record of type/version {val}".format( val=val )
-            if key.strip().lower() == "k":
-                assert val.lower() == "ed25519", \
-                    "Failed to find Ed25519 public key; instead was of type {val!r}".format( val=val )
-            if key.strip().lower() == "p":
-                p		= val.strip()
-        assert p, \
-            "Failed to locate public key in TXT DKIM record: {dkim}".format( dkim=dkim )
-        p_binary		= into_bytes( p, ('base64',) )
-        return p_binary
+        dkim			= records[0]["data"]
+        pubkey			= DKIM_pubkey( dkim )
+        log.info( "Found Ed25519 pubkey via DKIM from {dkim_path}: {pubkey}".format(
+            dkim_path	= dkim_path,
+            pubkey	= into_b64( pubkey )
+        ))
+        return pubkey
 
 
 class Timespan( Serializable ):
