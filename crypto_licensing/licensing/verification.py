@@ -947,8 +947,8 @@ class Agent( Serializable ):
 
         """
         dkim_path, _dkim_rr	= self.domainkey
-        log.debug("Querying {domain} for DKIM service {service}: {dkim_path}".format(
-            domain=self.domain, service=self.service, dkim_path=dkim_path
+        log.debug("Querying {domain} service {service} for DKIM public key: {dkim_path}".format(
+            domain=self.domain, service=self.servicekey, dkim_path=dkim_path
         ))
         records			= doh.query( dkim_path, 'TXT' )
         assert len( records ) == 1, \
@@ -1511,9 +1511,10 @@ class License( Serializable ):
         if digest not in once:
             once.add( digest )
         else:
-            log.info( "License for {auth}'s {prod!r} already granted; ignoring".format(
+            log.info( "License for {auth}'s {prod!r} already granted (duplicate from {_from})".format(
                 auth	= self.author.name,
                 prod	= self.author.product,
+                _from	= self._from,
             ))
             return res_grants
 
@@ -2983,11 +2984,12 @@ def authorized(
                             ) if log.isEnabledFor( logging.DEBUG ) else ""
                         ))
                         continue
-                    log.normal( "License for {auth_lic}'s {prod_lic!r} does grant capabilities for {auth}'s {prod}".format(
+                    log.normal( "License for {auth_lic}'s {prod_lic!r} does grant capabilities for {auth}'s {prod}{stack}".format(
                         auth_lic	= lic.license.author.name,
                         prod_lic	= lic.license.author.product,
                         auth		= author.name,
-                        prod		= author.product
+                        prod		= author.product,
+                        stack		= ''.join( traceback.format_stack() if log.isEnabledFor( logging.TRACE ) else [] ),
                     ))
                     licenses[key].append( lic )
 
@@ -3003,7 +3005,7 @@ def authorized(
                     # here (not at the start of the loop), to catch the case where only None,None is
                     # yielded from check).
                     licenses		= dict()
-                    username,password = credentials
+                    username,password	= credentials
                     state		= State.INITIAL
                     break
             else:

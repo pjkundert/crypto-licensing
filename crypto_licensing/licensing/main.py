@@ -1963,13 +1963,21 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
             loaded.append( (key,lic) )
 
         # Collect up all the License grants; there may be more than one, if the user has purchased
-        # multiple Licenses at different times.
+        # multiple Licenses at different times.  Ensures we only include a specific License once.
         grants			= licensing.Grant()
+        once			= set()
         for key,lic in loaded:
-            log.normal( "Located Agent Ed25519 Keypair {} w/ License for {}".format(
-                licensing.into_b64( key.vk ), lic and lic.license.author.product ))
-            grants	       |= lic.grants()
+            grants_lic		= lic.grants( once=once )
+            log.normal( "Located Agent Ed25519 Keypair {pubkey} w/ {product} License (from {_from}){extra}".format(
+                pubkey	= licensing.into_b64( key.vk ),
+                product	= lic and lic.license.author.product or "End-User",
+                _from	= "from {}".format( lic._from ) if lic._from else "locally issued",
+                extra	= (( " w/ grants: {}".format( grants_lic ) if log.isEnabledFor( logging.DEBUG ) else "" )
+                           + ( " merging w/ grants: {}".format( grants ) if log.isEnabledFor( logging.TRACE ) else "" )),
+            ))
+            grants	       |= grants_lic
 
+        # And, finally: ascertain whether we have a Grant to run Dominion R&D Corp's Crypto Licensing Server!
         assert dominion.servicekey in grants, \
             "Unable to find {}'s product {!r} service key {!r} in License Grants {}".format(
                 dominion.name, dominion.product, dominion.servicekey, grants )
