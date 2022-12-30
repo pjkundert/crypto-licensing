@@ -64,6 +64,7 @@ package_dir			= {
     "crypto_licensing/ed25519":		"./crypto_licensing/ed25519",
     "crypto_licensing/ed25519ll_pyonly":"./crypto_licensing/ed25519ll_pyonly",
     "crypto_licensing/licensing":	"./crypto_licensing/licensing",
+    "crypto_licensing/licensing/doh":	"./crypto_licensing/licensing/doh",
 }
 
 # Including data in the package is complex: https://sinoroc.gitlab.io/kb/python/package_data.html

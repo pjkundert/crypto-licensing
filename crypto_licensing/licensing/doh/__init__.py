@@ -29,8 +29,8 @@ from enum		import Enum
 
 import requests
 
-from ..misc		import type_str_base, memoize
-from .defaults		import DOHMAXSIZE, DOHMAXAGE
+from ...misc		import type_str_base, memoize, log_cfg, log_level
+from ..defaults		import DOHMAXSIZE, DOHMAXAGE
 
 log				= logging.getLogger( "DoH" )
 
