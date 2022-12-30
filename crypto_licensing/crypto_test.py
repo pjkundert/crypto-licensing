@@ -143,5 +143,5 @@ def test_ed25519():
                 if dur > 5.0:
                     break
 
-            log.normal("\n{dsc}: Completed {cnt} signature checks in {dur}s, or {per:.5}/s".format(
+            log.normal("\n{dsc}: Completed {cnt} signatures/checks in {dur}s, or {per:.5}/s".format(
                 dsc=description, cnt=cnt, dur=dur, per=cnt/dur ))
