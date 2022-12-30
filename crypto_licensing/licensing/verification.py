@@ -2915,11 +2915,11 @@ def authorized(
     state			= State.INITIAL
     while state is not State.DONE:
         state			= State( state.value + 1 )
+        log.detail( "{state}".format( state=state ))
         if state is State.CHECKING:
             # Look for Agent Keypairs and any associated Licenses issued to it, filtered by the
             # Author we're looking for.  We want to keep CHECKING, again and again, while the
             # caller provides new credentials.
-            log.normal( "{state}".format( state=state ))
             credentials			= None
             for key,lic in check_nolog(
                 username	= username,
@@ -3017,7 +3017,6 @@ def authorized(
         elif state is State.REGISTERING:
             # We mustn't have seen even one Keypair; should we try "registering" a new Keypair?  If
             # None/'' is supplied for either credential, an unencrypted Keypair will be produced.
-            log.normal( "{state}".format( state=state ))
             if not registering:
                 raise NotRegistered( "No Keypair found; request registering one, or provide different credentials" )
             key			= registered(
@@ -3030,10 +3029,17 @@ def authorized(
                 reverse		= not reverse if reverse_save is None else reverse_save,
                 registering	= True,
             )
-            log.detail( "Created {key}".format( key=key ))
+            log.detail( "{state}: {action} {key}".format(
+                state	= state,
+                action	= "Loaded " if key._from else "Created",
+                key	= key ))
             licenses		= { key: [] }
 
         elif state is State.LICENSING:
+            # We can end up here after yielding zero, one or more valid Licenses.  This is because
+            # the caller is trying to accumulate all available Licenses, and can't know when no more
+            # are available.  As they accumulate Licenses, looking for a certain accumulation of
+            # License.grants(), the final remaining required Grant should be supplied.
             if acquiring and len( licenses ) != 1:
                 log.normal( "{state}, w/ {keys} Agent IDs available -- enter different credentials?".format(
                     state	= state,
@@ -3044,19 +3050,25 @@ def authorized(
                     username,password	= credentials
                     state		= State.INITIAL
                 else:
-                    # No keypairs, no new credentials.  We're done the authorize process.
+                    # No keypairs (or too many), no new credentials.  We're done the authorize process.
+                    log.warning( "{state}: {which} Agent Keypair; Not acquiring a License".format(
+                        state	= state,
+                        which	= "No" if not license else "Ambiguous",
+                    ))
                     continue
             if not acquiring:
                 # Not directed to attempt to acquire License.  We're done the authorize process.
-                log.warning( "{state}; no Licenses found, not attempting to acquire one".format(
+                log.warning( "{state}; no Licenses found, not directed to acquire one".format(
                     state	= state,
                 ))
                 continue
+            # One Agent Keypair; try to obtain a License
             key,	= licenses.keys()
             log.normal( "{state}, w/ Agent ID {agent}; attempting licensing".format(
                 state	= state,
                 agent	= into_b64( key.vk ),
             ))
+            # TODO
 
         else:
             log.normal( "{state}, w/ {keys} Agent IDs and {lics} Licenses found".format(
