@@ -22,9 +22,11 @@ except ImportError:
     pass
 
 import calendar
-import collections
 import datetime
 import fnmatch
+import functools
+import types
+import getpass
 import glob
 import logging
 import math
@@ -32,10 +34,13 @@ import os
 import re
 import sys
 import time
+import traceback
+
+from functools		import wraps
 
 import pytz
 try:
-    from tzlocal import get_localzone
+    from tzlocal	import get_localzone
 except ImportError:
     def get_localzone( _root='/' ):
         """No tzlocal; support basic Linux systems with a TZ variable or an /etc/timezone file"""
@@ -56,6 +61,14 @@ except ImportError:
 
         raise pytz.UnknownTimeZoneError( 'Can not find any timezone configuration' )
 
+
+#
+# Python2/3 Compatibility Types
+#
+from numbers		import Number
+type_str_base			= basestring if sys.version_info[0] < 3 else str  # noqa: F821
+type_num_base			= Number
+
 try:
     import reprlib					# noqa: F401
 except ImportError:
@@ -72,9 +85,58 @@ except NameError:
     unicode			= str
 
 try:
-    from urllib import urlencode			# noqa: F401
+    from urllib		import urlencode, unquote       # noqa: F401
 except ImportError:
-    from urllib.parse import urlencode			# noqa: F401
+    from urllib.parse	import urlencode, unquote       # noqa: F401
+
+try:  # Python2
+    from urllib2	import urlopen, Request		# noqa: F401
+except ImportError:  # Python3
+    from urllib.request	import urlopen, Request		# noqa: F401
+
+try:
+    import pathlib					# noqa: F401
+except ImportError:
+    import pathlib2 as pathlib				# noqa: F401
+
+# Use secrets.token_bytes for random number generation; supply for Python <3.6
+try:
+    from secrets	import token_bytes, DEFAULT_ENTROPY
+except ImportError:
+    # Directly from https://github.com/python/cpython/blob/3.10/Lib/secrets.py
+    from random		import SystemRandom as _sysrand
+
+    DEFAULT_ENTROPY = 32  # number of bytes to return by default
+
+    # Python2/3 support; fall back to os.urandom
+    _randbytes = getattr( _sysrand, 'randbytes', os.urandom )
+
+    def token_bytes(nbytes=None):
+        """Return a random byte string containing *nbytes* bytes.
+
+        If *nbytes* is ``None`` or not supplied, a reasonable
+        default is used.
+
+        >>> token_bytes(16)  #doctest:+SKIP
+        b'\\xebr\\x17D*t\\xae\\xd4\\xe3S\\xb6\\xe2\\xebP1\\x8b'
+        """
+        if nbytes is None:
+            nbytes = DEFAULT_ENTROPY
+        return _randbytes(nbytes)
+
+
+def is_mapping( thing ):
+    """See if the thing implements the Mapping protocol."""
+    return hasattr( thing, 'keys' ) and hasattr( thing, '__getitem__' )
+
+
+def is_listlike( thing ):
+    """Something like a list or tuple; indexable, but not a string or a class (some may have
+    __getitem__, eg. cpppo.state, based on a dict).
+
+    """
+    return not isinstance( thing, (type_str_base,type) ) and hasattr( thing, '__getitem__' )
+
 
 __author__                      = "Perry Kundert"
 __email__                       = "perry@dominionrnd.com"
@@ -86,24 +148,153 @@ Miscellaneous functionality used by various other modules.
 """
 
 
-# 
+#
 # Logging related tooling
-# 
+#
+def change_function( function, **kwds ):
+    """Change a function with one or more changed co_... attributes, eg.:
+
+            change_function( func, co_filename="new/file/path.py" )
+
+    will change the func's co_filename to the specified string.
+
+    The types.CodeType constructor differs between Python 2 and 3; see
+    type help(types.CodeType) at the interpreter prompt for information:
+
+    Python2:
+        code(argcount,                nlocals, stacksize, flags, codestring,
+         |        constants, names, varnames, filename, name, firstlineno,
+         |        lnotab[, freevars[, cellvars]])
+
+    Python3:
+        code(argcount, kwonlyargcount, nlocals, stacksize, flags, codestring,
+         |        constants, names, varnames, filename, name, firstlineno,
+         |        lnotab[, freevars[, cellvars]])
+
+
+    """
+    if hasattr( function.__code__, 'replace' ):
+        function.__code__	= function.__code__.replace( **kwds )
+        return
+
+    # Nope, gotta create a function.__code__ from scratch.  Enumerate all the __code__ attributes in
+    # the same order; types.CodeTypes doesn't accept keyword args, only position.
+    attrs			= [ "co_argcount" ]
+    if sys.version_info[0] >= 3:
+        attrs		       += [ "co_kwonlyargcount" ]
+        if sys.version_info[1] >= 8:
+            attrs	       += [ "co_posonlyargcount" ]
+    attrs		       += [ "co_nlocals",
+                                    "co_stacksize",
+                                    "co_flags",
+                                    "co_code",
+                                    "co_consts",
+                                    "co_names",
+                                    "co_varnames",
+                                    "co_filename",
+                                    "co_name",
+                                    "co_firstlineno",
+                                    "co_lnotab",
+                                    "co_freevars",
+                                    "co_cellvars" ]
+
+    assert all( k in attrs for k in kwds ), \
+        "Invalid function keyword(s) supplied: %s" % ( ", ".join( kwds.keys() ))
+
+    # Alter the desired function attributes, and update the function's __code__
+    modi_args			= [ kwds.get( a, getattr( function.__code__, a )) for a in attrs ]
+    modi_code			= types.CodeType( *modi_args )
+    modi_func			= types.FunctionType( modi_code, function.__globals__ )
+    function.__code__		= modi_func.__code__
+
+
+#
+# Add some new levels, w/ minimal functionality.  In Python 2, we cannot (easily) add new
+# eg. logging.boo functions for logging level BOO, because logging uses an extremely fragile
+# mechanism for finding the first non-logging function stack frame.  So, we must use .log(
+# logging.BOO, ... ) with the new levels, unless we change the custom logging functions' co_filename
+# data...  We've tried to be consistent w/ cpppo's logging levels.
+#
+
+#      .FATAL 		       == 50
+#      .ERROR 		       == 40
+#      .WARNING 	       == 30
+logging.NORMAL			= logging.INFO+5        # 25
+logging.DETAIL			= logging.INFO+3        # 23
+#      .INFO    	       == 20
+#      .DEBUG    	       == 10
+logging.TRACE			= logging.NOTSET+5      # 5
+#      .NOTSET    	       == 0
+
+logging.addLevelName( logging.NORMAL,	'NORMAL' )
+logging.addLevelName( logging.DETAIL,	'DETAIL' )
+logging.addLevelName( logging.TRACE,	'TRACE' )
+
+# We'll use the "simple" method of creating custom named log functions for the new levels under
+# Python 3.  These do *not* correctly report the caller's file/line under Python 2, because the
+# logging.Logger.findCaller looks at each call-stack function's f_code.co_filename to see if its a
+# function/method of logging!  So, if you see incorrect file/line reported by these methods, that's
+# why.  In Python3.?, logging.Logger.findCaller skips stacklevel=1 (this custom log function!),
+# avoiding the problem.  However, Python2.7 still examines the <function>.f_code.co_filename, so we
+# have to carefully fix it to match logging._srcfile.
+if hasattr( functools, 'partialmethod' ):
+    logging.Logger.normal		= functools.partialmethod( logging.Logger.log, logging.NORMAL )
+    logging.Logger.detail		= functools.partialmethod( logging.Logger.log, logging.DETAIL )
+    logging.Logger.trace		= functools.partialmethod( logging.Logger.log, logging.TRACE )
+else:
+    def __normal( self, msg, *args, **kwargs ):
+        if self.isEnabledFor( logging.NORMAL ):
+            self._log( logging.NORMAL, msg, args, **kwargs )
+
+    def __detail( self, msg, *args, **kwargs ):
+        if self.isEnabledFor( logging.DETAIL ):
+            self._log( logging.DETAIL, msg, args, **kwargs )
+
+    def __trace( self, msg, *args, **kwargs ):
+        if self.isEnabledFor( logging.TRACE ):
+            self._log( logging.TRACE, msg, args, **kwargs )
+
+    change_function( __normal, co_filename=logging._srcfile )
+    change_function( __detail, co_filename=logging._srcfile )
+    change_function( __trace, co_filename=logging._srcfile )
+
+    logging.Logger.normal		= __normal
+    logging.Logger.detail		= __detail
+    logging.Logger.trace		= __trace
+
+    '''
+    import traceback
+    _logging_Logger_findCaller = logging.Logger.findCaller
+    def __findCaller( self, *args, **kwds ):
+        print( "{_srcfile} vs: ".format( _srcfile=logging._srcfile ) + ''.join( traceback.format_stack() ))
+        return _logging_Logger_findCaller( self, *args, **kwds )
+    logging.Logger.findCaller		= __findCaller
+    '''
+
+logging.normal			= functools.partial( logging.log, logging.NORMAL )
+logging.detail			= functools.partial( logging.log, logging.DETAIL )
+logging.trace			= functools.partial( logging.log, logging.TRACE )
+
 log				= logging.getLogger( "misc" )
 
 log_cfg				= {
-    "level":	logging.WARNING,
+    "level":	logging.NORMAL,
     "datefmt":	'%Y-%m-%d %H:%M:%S',
     #"format":	'%(asctime)s.%(msecs).03d %(threadName)10.10s %(name)-16.16s %(levelname)-8.8s %(funcName)-10.10s %(message)s',
-    "format":	'%(asctime)s %(name)-16.16s %(message)s',
+    #"format":	'%(asctime)s %(levelname)-8.8s %(name)-16.16s %(filename)-16.16s %(lineno)-5d %(message)s',
+    "format":	'%(asctime)s %(levelname)-8.8s %(name)-10.10s %(funcName)-10.10s %(message)s',
+    #"format":	'%(asctime)s %(levelname)-8.8s %(name)-16.16s %(message)s',
 }
 
 log_levelmap 			= {
-    -2: logging.FATAL,
-    -1: logging.ERROR,
-    0: logging.WARNING,
-    1: logging.INFO,
-    2: logging.DEBUG,
+    -3: logging.FATAL,
+    -2: logging.ERROR,
+    -1: logging.WARNING,
+    0: logging.NORMAL,
+    1: logging.DETAIL,
+    2: logging.INFO,
+    3: logging.DEBUG,
+    4: logging.TRACE,
 }
 
 
@@ -120,12 +311,15 @@ def log_level( adjust ):
     ]
 
 
-#
-# Python2/3 Compatibility Types
-#
+def log_args( func ):
+    """Decorator for logging function args, kwds"""
+    @wraps( func )
+    def wrapper( *args, **kwds ):
+        print('args - ', args)
+        print('kwds - ', kwds)
+        return func(*args, **kwds)
+    return wrapper
 
-# The base class of string types
-type_str_base			= basestring if sys.version_info[0] < 3 else str  # noqa: F821
 
 #
 # misc.timer
@@ -138,6 +332,77 @@ if sys.platform == 'win32' and sys.version_info[0:2] < (3,8):
 else:
     # On most other platforms the best timer is time.time
     timer			= time.time
+
+
+def memoize( maxsize=None, maxage=None, log_at=None ):
+    """A very simple memoization wrapper based on (immutable) args only, for simplicity.  Any
+    keyword arguments must be immaterial to the successful outcome, eg. timeout, selection of
+    providers, etc..
+
+    Only successful (non-Exception) outcomes are cached!
+
+    Keeps track of the age (in seconds) and usage (count) of each entry, updating them on each call.
+    When an entry exceeds maxage, it is purged.  If the memo dict exceeds maxsize entries, 10% are
+    purged.
+
+    Optionally logs when we memoize something, at level log_at.
+    """
+    def decorator( func ):
+        @wraps( func )
+        def wrapper( *args, **kwds ):
+            now			= timer()
+            # A 0 hits count is our sentinel indicating args not memo-ized
+            last,hits		= wrapper._stat.get( args, (now,0) )
+            if not hits or ( maxage and ( now - last > maxage )):
+                entry = wrapper._memo[args] = func( *args, **kwds )
+                if log_at and log.isEnabledFor( log_at ):
+                    if hits:
+                        log.log( log_at, "{} Refreshed {!r} == {!r}".format( wrapper.__name__, args, entry ))
+                    else:
+                        log.log( log_at, "{} Memoizing {!r} == {!r}".format( wrapper.__name__, args, entry ))
+            else:
+                entry		= wrapper._memo[args]
+                #log.detail( "{} Remembers {!r} == {!r}".format( wrapper.__name__, args, entry ))
+            hits	       += 1
+            wrapper._stat[args] = (now,hits)
+
+            if maxsize and len( wrapper._memo ) > maxsize:
+                # Prune size, by ranking each entry by hits/age.  Something w/:
+                #
+                #   2 hits 10 seconds old > 1 hits 6 seconds old > 3 hits 20 seconds old
+                #
+                # Sort w/ the highest rated keys first, so we can just eject all those after 9/10ths of
+                # maxsize.
+                rating		= sorted(
+                    (
+                        (hits / ( now - last + 1 ), key)		# Avoids hits/0
+                        for key,(last,hits) in wrapper._stat.items()
+                    ),
+                    reverse	= True,
+                )
+                for rtg,key in rating[maxsize * 9 // 10:]:
+                    # log.detail( "{} Ejecting  {!r} == {!r} w/ rating {:7.2f}, stats: {}".format(
+                    #     wrapper.__name__, key, wrapper._memo[key], rtg, wrapper._stat[key] ))
+                    del wrapper._stat[key]
+                    del wrapper._memo[key]
+            return entry
+
+        wrapper._memo	= dict()		# { args: entry, ... }
+        wrapper._stat	= dict()		# { args: (<timestamp>, <count>), ... }
+
+        def stats( predicate=None, now=None ):
+            if now is None:
+                now		= timer()
+            cnt,age,avg		= 0,0,0
+            for key,(last,hits) in wrapper._stat.items():
+                if not predicate or predicate( *key ):
+                    cnt	       += 1
+                    age	       += now-last
+                    avg	       += hits
+            return cnt,age/(cnt or 1),avg/(cnt or 1)
+        wrapper.stats		= stats
+        return wrapper
+    return decorator
 
 
 #
@@ -288,14 +553,28 @@ class Duration( datetime.timedelta ):
         return self.total_seconds()
 
     def __int__( self ):
-        return int( self.total_seconds() )
+        return int( float( self ))
+
+    def __add__( self, rhs ):
+        """Convert any int/float/str, etc. to a Duration/timedelta, and add it to the current
+        timedelta
+
+        """
+        if not isinstance( rhs, Duration):
+            rhs			= Duration( rhs )
+        return Duration( super( Duration, self ).__add__( rhs ))
+
+    def __sub__( self, rhs ):
+        if not isinstance( rhs, Duration):
+            rhs			= Duration( rhs )
+        return Duration( super( Duration, self ).__sub__( rhs ))
 
 
 def parse_seconds( seconds ):
     """Convert an <int>, <float>, "<float>", "[HHH]:MM[:SS[.sss]]", "1m30s" or a Duration to a float number of seconds.
 
     """
-    if isinstance( seconds, datetime.timedelta ):	# <timedelta>, <Duration>
+    if isinstance( seconds, datetime.timedelta ):       # <timedelta>, <Duration>
         return seconds.total_seconds()
     try:						# '1.23'
         return float( seconds )
@@ -406,8 +685,8 @@ class Timestamp( datetime.datetime ):
     LOC				= get_localzone()       # from environment TZ, /etc/timezone, etc.
 
     _precision			= 3			# How many default sub-second digits
-    _epsilon			= 10**-_precision       # How small a difference to consider ==
-    _fmt			= '%Y-%m-%d %H:%M:%S'	# 2014-04-01 10:11:12
+    _epsilon			= 10 ** -_precision     # How small a difference to consider ==
+    _fmt			= '%Y-%m-%d %H:%M:%S'   # 2014-04-01 10:11:12
 
     def __str__( self ):
         return self.render()
@@ -509,10 +788,11 @@ class Timestamp( datetime.datetime ):
 
     # Comparisons.  Always equivalent to lexicographically, in UTC to 3 decimal places.  However,
     # we'll compare numerically, to avoid having to render/compare strings; if the <self>.value is
-    # within _epsilon (default: 0.001) of <rhs>.value, it is considered equal.  Pypy2
-    # re-implements the pytz library w/ some comparisons against raw datetime.datetimes, so we
-    # have to support them directly; they have no .timestamp().  However, pypy2 has other issues,
-    # so we don't support it -- it is an optional optimization for Python2 code, anyway...
+    # within _precision (default: 3) / _epsilon (default: 0.001) of <rhs>.value, it is considered
+    # equal.  Pypy2 re-implements the pytz library w/ some comparisons against raw
+    # datetime.datetimes, so we have to support them directly; they have no .timestamp().  However,
+    # pypy2 has other issues, so we don't support it -- it is an optional optimization for Python2
+    # code, anyway...
     def __lt__( self, rhs ):
         assert isinstance( rhs, (Timestamp, datetime.datetime) ), \
             "Expected Timestamp/datetime, got: {!r}".format( rhs )
@@ -520,16 +800,16 @@ class Timestamp( datetime.datetime ):
             rhs_ts		= rhs.timestamp()
         except AttributeError:
             rhs_ts		= calendar.timegm( rhs.utctimetuple() ) + rhs.microsecond / 1000000
-        return self.timestamp() + self.__class__._epsilon < rhs_ts
+        return self.timestamp() + self._epsilon/2 < rhs_ts
 
     def __gt__( self, rhs ):
         assert isinstance( rhs, (Timestamp, datetime.datetime) ), \
             "Expected Timestamp/datetime, got: {!r}".format( rhs )
         try:
             rhs_ts		= rhs.timestamp()
-        except AttributteError:
+        except AttributeError:
             rhs_ts		= calendar.timegm( rhs.utctimetuple() ) + rhs.microsecond / 1000000
-        return self.timestamp() - self.__class__._epsilon > rhs_ts
+        return self.timestamp() - self._epsilon/2 > rhs_ts
 
     def __le__( self, rhs ):
         return not self.__gt__( rhs )
@@ -544,21 +824,18 @@ class Timestamp( datetime.datetime ):
         return self.__lt__( rhs ) or self.__gt__( rhs )
 
     # Add/subtract Duration or numeric seconds.  +/- 0 is a noop/copy.  A Timestamp /
-    # datetime.datetime is immutable, so cannot implemente __i{add/sub}__.  Converts to timedelta,
+    # datetime.datetime is immutable, so cannot implement __i{add/sub}__.  Converts to timedelta,
     # and uses underlying __{add,sub}__.
     def __add__( self, rhs ):
-        """
-
-        Convert any int/float/str, etc. to a Duration/timedelta, and add it to the current
+        """Convert any int/float/str, etc. to a Duration/timedelta, and add it to the current
         Timestamp, retaining its timezone preference.
 
         """
         if not isinstance( rhs, Duration):
-            rhs		= Duration( rhs )
+            rhs			= Duration( rhs )
         if rhs.total_seconds():
             return Timestamp( super( Timestamp, self ).__add__( rhs ), tzinfo=self.tzinfo )
         return self
-
 
     def __sub__( self, rhs ):
         """Convert any int/float/str, etc. to a Duration/timedelta, and subtract it from the current
@@ -570,18 +847,15 @@ class Timestamp( datetime.datetime ):
             # Subtracting datetimes; result is a Duration; from existing __sub__ --> timedelta
             return Duration( super( Timestamp, self ).__sub__( rhs ))
         # Subtracting something else; must be convertible by Duration into a timedelta
-        rhs		= Duration( rhs )
+        rhs			= Duration( rhs )
         if rhs.total_seconds():
             return Timestamp( super( Timestamp, self ).__sub__( rhs ), tzinfo=self.tzinfo )
         return self
 
 
-Timespan = collections.namedtuple( 'Timespan', ('start', 'length') )
-
-
 def config_paths( filename, extra=None ):
     """Yield the configuration search paths in *reverse* order of precedence (furthest or most
-    general, to nearest or most specific).
+    general eg. /etc/..., to nearest or most specific, eg. ./...).
 
     This is the order that is required by configparser; settings configured in "later" files
     override those in "earlier" ones.
@@ -590,13 +864,12 @@ def config_paths( filename, extra=None ):
     do this manually.
 
     """
-    yield os.path.join( os.path.dirname( __file__ ), filename )			# installation root dir
-    yield os.path.join( os.getenv( 'APPDATA', os.sep + 'etc' ), filename )      # global app data dir, eg. /etc/
+    yield os.path.join( os.getenv( 'APPDATA', os.sep + 'etc' ), filename )      # global app data dir, eg. /etc/ (most general)
     yield os.path.join( os.path.expanduser( '~' ), '.'+CONFIG_BASE, filename )  # user dir, ~username/.crypto-licensing/name
     yield os.path.join( os.path.expanduser( '~' ), '.' + filename )		# user dir, ~username/.name
     for e in extra or []:							# any extra dirs...
         yield os.path.join( e, filename )
-    yield filename								# current dir (most specific)
+    yield filename								# relative to current working dir (most specific)
 
 
 # Default configuration files path, In 'configparser' expected order (most general to most specific)
@@ -608,7 +881,11 @@ except NameError:
     ConfigNotFoundError		= IOError		# Python2 compatibility
 
 
-def config_open( name, mode=None, extra=None, skip=None, reverse=True, **kwds ):
+class ConfigFoundError( KeyError ):
+    pass
+
+
+def config_open( name, mode=None, extra=None, skip=None, reverse=True, overwrite=False, **kwds ):
     """Find and open all glob-matched file name(s) found on the standard or provided configuration file
     paths (plus any extra), in most general to most specific order.  Yield the open file(s), or
     raise a ConfigNotFoundError (a FileNotFoundError or IOError in Python3/2 if no matching file(s)
@@ -624,6 +901,12 @@ def config_open( name, mode=None, extra=None, skip=None, reverse=True, **kwds ):
     A 'skip' glob pattern or predicate function taking a single name and returning True/False may be
     supplied.
 
+    When reading and writing to *existing* files, skip and the glob pattern matching is supported.
+    When creating *new* files, of course skip (fnmatch) and glob patterns must be avoided (because
+    they only interact with already existing files).  So, avoid using any globbing characters "*?[]"
+    in the filename, or it will be impossible to create a file.
+
+    Writing to existing files will (by default) raise a ConfigFoundError, unless overwrite=True.
     """
     if isinstance( skip, type_str_base ):
         filtered		= lambda names: (n for n in names if not fnmatch.fnmatch( n, skip ))  # noqa: E731
@@ -637,13 +920,26 @@ def config_open( name, mode=None, extra=None, skip=None, reverse=True, **kwds ):
     search			= list( config_paths( name, extra=extra ))
     if reverse:
         search			= reversed( search )
+    is_globbing			= glob.has_magic( name )
     for fn in search:
-        for gn in sorted( filtered( glob.glob( fn ))):
+        log.trace( "config_open search {fn!r}{globbing}".format(
+            fn=fn, globbing=" w/ globbing" if is_globbing else "" ))
+        for gn in sorted( filtered( glob.iglob( fn ) if is_globbing else [ fn ] )):
+            mode		= mode or 'r'
+            if 'w' in mode and ( not overwrite ) and os.path.exists( gn ):
+                raise ConfigFoundError( gn )
             try:
-                yield open( gn, mode=mode or 'r', **kwds )
-            except Exception:
+                f		= open( gn, mode=mode or 'r', **kwds )
+            except Exception as exc:
                 # The file couldn't be opened (eg. permissions)
+                log.debug( "config_open failed {fn!r} in mode {mode!r}: {exc}".format(
+                    fn=fn, mode=mode,
+                    exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
                 pass
+            else:
+                log.info( "config_open opened {fn!r} in mode {mode!r}".format(
+                    fn=f.name, mode=mode ))
+                yield f
 
 
 def deduce_name( basename=None, extension=None, filename=None, package=None ):
@@ -666,14 +962,45 @@ def deduce_name( basename=None, extension=None, filename=None, package=None ):
     return name
 
 
-def config_open_deduced( basename=None, mode=None, extension=None, filename=None, package=None, **kwds ):
+def config_open_deduced( basename=None, mode=None, extension=None, filename=None, package=None, overwrite=False, **kwds ):
     """Find any glob-matched configuration file(s), optionally deducing the basename from the provided
     __file__ filename or __package__ package name, returning the open file or raising a ConfigNotFoundError
-    (or FileNotFoundError, or IOError in Python2).
+    (a FileNotFoundError, or IOError in Python2).
 
+    If writing, will default to not overwrite an existing file; will raise a ConfigFoundError instead.
     """
     for f in config_open(
-            name=deduce_name(
+            name	= deduce_name(
                 basename=basename, extension=extension, filename=filename, package=package ),
-            mode=mode or 'r', **kwds ):
+            mode	= mode or 'r',
+            overwrite	= overwrite,
+            **kwds
+    ):
         yield f
+
+
+def input_secure( prompt, secret=True, file=None ):
+    """When getting secure (optionally secret) input from standard input, we don't want to use getpass, which
+    attempts to read from /dev/tty.
+
+    """
+    if ( file or sys.stdin ).isatty():
+        # From TTY; provide prompts, and do not echo secret input
+        if secret:
+            return getpass.getpass( prompt, stream=file )
+        elif file:
+            # Coming from some file; no prompt, read a line from the file source
+            return file.readline()
+        else:
+            return input( prompt )
+    else:
+        # Not a TTY; don't litter pipeline output with prompts
+        if file:
+            return file.readline()
+        return input()
+
+
+def gray( p ):
+    #grayscale			= '''$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\|()1{}[]?-_+~<>i!lI;:,"^`'.'''
+    grayscale			= '''$EFLlv!;,.'''
+    return grayscale[-1 - max( 0, min( len( grayscale )-1, int( p * len( grayscale ))))]

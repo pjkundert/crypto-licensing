@@ -13,6 +13,8 @@
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 #
 
+import warnings
+
 # We require that at least the basic dholth/ed25519ll API must be available
 __all__ = [
     'crypto_sign', 'crypto_sign_open', 'crypto_sign_keypair', 'Keypair',
@@ -29,3 +31,6 @@ except Exception: # If not installed/built correctly, may have various errors...
     except ImportError:
         # Fall back to the very slow D.J.Bernstein Python reference implementation
         from ..ed25519_djb import *
+
+# Disable warnings about seed source; we expect to provide cryptographically secure randomness
+warnings.filterwarnings( action="ignore", category=RuntimeWarning, module=__name__ )

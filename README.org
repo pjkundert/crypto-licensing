@@ -1,11 +1,16 @@
 #+title: Cryptographically Signed License Issuance with Payment in Cryptocurrency
+#+author: Perry Kundert
+#+email: perry@kundert.ca
 #+date: 2022-01-25 12:32:00
 #+draft: false
 #+EXPORT_FILE_NAME: README.pdf
 #+STARTUP: org-startup-with-inline-images inlineimages
 #+STARTUP: org-latex-tables-centered nil
+
 #+OPTIONS: ^:nil # Disable sub/superscripting with bare _; _{...} still works
 #+OPTIONS: toc:nil
+
+#+LATEX_HEADER: \usepackage[margin=1.0in]{geometry}
 
 #+BEGIN_SRC emacs-lisp :noweb no-export :exports results
 ;; Tables not centered
@@ -13,6 +18,7 @@
  setq org-latex-tables-centered nil
       org-src-preserve-indentation t
       org-edit-src-content-indentation 0
+      org-confirm-babel-evaluate nil
 )
 nil
 #+END_SRC
@@ -26,8 +32,86 @@ regulatory and banking interference.
 The =crypto-licensing= Python module allows you automatically and securely issue licenses, and get
 paid in various cryptocurrencies.
 #+END_ABSTRACT
-#+TOC: headlines 2
 
-* Confirmation using Ed25519 Signatures
+#+TOC: headlines 3
+
+* Software Licensing Using Ed25519 Signatures
+
+** Issuing A License 
+
+   To begin authoring Licenses, you need to be able to sign them.  Create and save an encrypted
+   Ed25519 keypair.
+
+*** =authoring=: Creating an Authoring Keypair
+
+    The raw =ed25519.Keypair= from =authoring= isn't serializable, so get a =crypto_licensing=
+    =KeypairEncrypted= and save its =str( <KeypairEncrypted> )= output to a file.
+
+    #+LATEX: {\scriptsize
+    #+BEGIN_SRC ipython :session :exports both :results raw drawer
+    import crypto_licensing as cl
+    username		= 'admin@awesome-inc.com'
+    password		= 'password'
+    auth_keypair	= None or cl.authoring( seed=b'\xff' * 32 ) # don't do, unless you have a random seed!
+    encr_keypair	= cl.KeypairEncrypted( auth_keypair, username=username, password=password )
+    decr_keypair	= cl.KeypairPlaintext( encr_keypair.into_keypair( username=username, password=password ))
+    [
+        [ "Plaintext:", "" ],
+        [ "verifying", decr_keypair['vk'] ],
+        [ "signing", decr_keypair['sk'] ],
+        [ "Encrypted:" ],
+        [ "salt", encr_keypair['salt'] ],
+        [ "ciphertext", encr_keypair['ciphertext'] ],
+    ]
+    #+END_SRC
+
+    #+RESULTS:
+    :results:
+   # Out[35]:
+   | 0          | 1                                                                                                |
+   |------------+--------------------------------------------------------------------------------------------------|
+   | Plaintext: |                                                                                                  |
+   | verifying  | dqFZIESm5PURJlvKc6YE2QsFKdHfYCvjChmpJXZg0fU=                                                     |
+   | signing    | //////////////////////////////////////////92oVkgRKbk9REmW8pzpgTZCwUp0d9gK+MKGakldmDR9Q==         |
+   | Encrypted: |                                                                                                  |
+   | salt       | 156dd79ff272ee57eca219eb                                                                         |
+   | ciphertext | 4aa6a946a22eb4444064d115286c352469a4e7ebdf41a61c2d31e68e1652f4917926b4a6910b5a9e48a3e74cd332a739 |
+   :end:
+
+    #+LATEX: }
+
+*** =register=: Create and save an Authoring Keypair
+
+    
+
+*** =issue=: Signing a License
+
+    A License can be as simple, free-standing authorization with no other License dependencies, or
+    it may have a tree of sub-Licenses that must also be confirmed as valid.
+
+*** =verify=: Confirm License (and sub-License) Validity
+
+** Using Licenses
+
+*** =load_keys=: Find all Ed25519 Signing Keys
+
+*** =load=: Find all Licenses
+
+*** =check=: Find all Keys and Valid Licenses
+
+    Loads every available Ed25519 Keypairs (with the provided credentials), and all available
+    Licenses, yielding all <Keypair>,<LicenseSigned> that are valid in the current environment.
+
+    If no valid License is available for some key found, then <Keypair>,None is yielded, allowing the
+    caller to use the Key to issue a License if desired.
+
+    If nothing at all is yielded, then this indicates that *no* Keypairs were found; either you need
+    to "register"  (create and save) one, or provide different credentials.
+
+** Running A =crypto_licensing.licensing= Server
+
+   Supply the =username= and =password= to the =KeypairEncrypted= via environment variables
+   =CRYPTO_LIC_USERNAME= and =CRYPTO_LIC_PASSWORD=.
+
 * Payment with Cryptocurrencies
 * Issuance via Web API

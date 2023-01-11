@@ -22,9 +22,13 @@ __copyright__                   = "Copyright (c) 2022, Dominion Research & Devel
 __license__                     = "Dual License: GPLv3 (or later) and Commercial (see LICENSE)"
 
 __all__				= [
-    'Serializable', 'LicenseIncompatibility', 'License', 'LicenseSigned',
-    'domainkey', 'author', 'issue', 'verify', 'load', 'load_keys',
+    'Serializable', 'LicenseIncompatibility', 'License', 'LicenseSigned', 'Agent',
+    'domainkey', 'authoring', 'issue', 'verify', 'load', 'load_keys',
+    'check', 'license',  'registered', 'authorized', 'machine_UUIDv4',
     'KeypairEncrypted', 'KeypairPlaintext',
+    'KEYPATTERN', 'KEYEXTENSION', 'LICPATTERN', 'LICEXTENSION',
+    'ENVPASSWORD', 'ENVUSERNAME',
 ]
 
-from .verification import *
+from .defaults		import *
+from .verification	import *

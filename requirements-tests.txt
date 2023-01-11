@@ -1,3 +1,2 @@
 flake8
-pytest>=4.6
-cpppo>=5.0
+pytest		>=4.6

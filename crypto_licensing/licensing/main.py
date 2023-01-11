@@ -1,5 +1,4 @@
 #! /usr/bin/env python3
-
 # -*- coding: utf-8 -*-
 
 #
@@ -18,61 +17,52 @@
 #
 
 """
-    Implements the Cpppo Licensing Server
+    Implements the Crypto Licensing server
 """
 
 from __future__ import print_function, absolute_import, division
 
-__author__                      = "Perry Kundert"
-__email__                       = "perry@hardconsulting.com"
-__copyright__                   = "Copyright (c) 2022 Dominion Research & Development Corp."
-__license__                     = "Dual License: GPLv3 (or later) and Commercial (see LICENSE)"
-
-
 import argparse
-import collections
-import copy
-import curses, curses.ascii, curses.panel
-import datetime
+import curses, curses.ascii, curses.panel  # noqa: E401
 import fnmatch
-import glob
 import json
 import logging
-import math
 import os
 import posixpath
-import random
-import re
 import signal
-import socket
 import sqlite3
 import sys
-import textwrap
 import threading
 import time
-import timeit
 import traceback
-import uuid
 import warnings
 
-try: # Python2
-    from urllib2 import urlopen
-    from urllib import urlencode, unquote
-except ImportError: # Python3
-    from urllib.request import urlopen
-    from urllib.parse import urlencode, unquote
-
-# Used for Web GUI, and for licensing database
+# Used for Web GUI, and for licensing database.  In the future, much of this will transition to
+# Holochain-based infrastructure.
 import web
 import web.httpserver
 import wsgilog
+
+from ..misc		import (
+    timer, Timestamp,
+    log_cfg, log_levelmap, log_level,
+    config_paths, config_open, ConfigNotFoundError,
+    unquote
+)
+from ..			import licensing
+from ..misc		import input_secure
+
+__author__                      = "Perry Kundert"
+__email__                       = "perry@dominionrnd.com"
+__copyright__                   = "Copyright (c) 2022 Dominion Research & Development Corp."
+__license__                     = "Dual License: GPLv3 (or later) and Commercial (see LICENSE)"
 
 web.config.debug 		= False
 web.config.session_parameters.update( {
     'cookie_name':	'session',
     'ignore_expiry':	True,
     'ignore_change_ip':	True,
-    'timeout':		7*24*60*60,	# 1 week
+    'timeout':		7*24*60*60,     # 1 week
 } )
 
 session_initializer		= {
@@ -83,14 +73,6 @@ session_initializer		= {
 }
 
 
-from ..misc		import (
-    timer, Timestamp, Duration,
-    type_str_base,    
-    log_cfg, log_levelmap, log_level,
-    config_paths, config_open, ConfigNotFoundError
-)
-from ..			import licensing
-
 log				= logging.getLogger( "licensing" )
 
 # Output files are stored in the CWD
@@ -98,14 +80,14 @@ LOGFILE				= "licensing.log"
 DB_FILE				= "licensing.db"
 ACCFILE				= "licensing.access"
 
-CRDFILE				= "licensing.credentials"	# Any author credentials available persistently
-KEYFILE				= "licensing.cpppo-keypair*"
-LICFILE				= "licensing.cpppo-license*"
+CRDFILE				= "licensing.credentials"       # Any author credentials available persistently
+KEYFILE				= "licensing." + licensing.KEYPATTERN
+LICFILE				= "licensing." + licensing.LICPATTERN
 
-# SQL configurations are typically found in cpppo/crypto/licensing/, but may be customized and
+# SQL configurations are typically found in crypto_licensing/licensing, but may be customized and
 # placed in any of the Cpppo configuration file paths (eg. ~/.cpppo/, /etc/cpppo/, or the current
 # working directory)
-SQLFILE				= "licensing.sql" # this + .* are loaded
+SQLFILE				= "licensing.sql"		# this + .* are loaded
 
 OURPATH				= os.path.dirname( os.path.abspath( __file__ ))
 TPLPATH				= os.path.join( OURPATH, "static/resources/templates/" )
@@ -113,7 +95,7 @@ LOCPATH				= os.path.abspath(os.path.curdir)
 
 # License Server Configuration
 
-config_extras			= [OURPATH] # Any extra higher-priority configuration paths to look in
+config_extras			= [OURPATH]  # Any extra higher-priority configuration paths to look in
 
 
 # The database: global 'db', which is a web.database connection.  Also 'db_lock', since sqlite3 is
@@ -131,6 +113,7 @@ db_statics			= {}
 db_lock				= threading.Lock()
 db				= None
 
+
 def db_setup():
     """Set up application-global db, db_lock, ...  Should be done after config_extras is initialized."""
 
@@ -143,7 +126,7 @@ def db_setup():
         try:
             for f in config_open( DB_FILE ):
                 with f:
-                    db_file_path= f.name
+                    db_file_path = f.name
                 break
         except ConfigNotFoundError:
             pass
@@ -188,7 +171,7 @@ def db_setup():
 
 def db_state_save():
     """Dump out any persistent licensing data, etc. that should be loaded next time.  This should be done
-    from time to time, so we don't get too far behind, in case of a cold reboot.  Of course, save 
+    from time to time, so we don't get too far behind, in case of a cold reboot.  Of course, save
     immediately upon license creation, etc.
 
     Make certain that all sqlite3 database calls are run in a single Thread.  We'll do the loading
@@ -226,6 +209,7 @@ def licenses( confirm=None, stored=None ):
 
     """
     emitted			= set()
+
     def emit( *provs ):
         for p in provs:
             if p.signature in emitted:
@@ -242,8 +226,14 @@ def licenses( confirm=None, stored=None ):
     # serialized forms.
     found			= 0
     for r in stored or []:
-        prov			= licensing.LicenseSigned(
-            license=r.license, signature=r.signature, confirm=confirm, machine_id_path=False )
+        try:
+            prov		= licensing.LicenseSigned(
+                license=r.license, signature=r.signature, confirm=confirm, machine_id_path=False )
+        except Exception as exc:
+            log.debug( "Failed to load stored License provenance: {exc} from: {lic}".format(
+                exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc,
+                lic=r.license ))
+            raise
         for sig, lic in emit( prov ):
             yield sig, lic
             found	       += 1
@@ -308,7 +298,8 @@ def credentials( *add ):
         pass
     log.info( "Credentials loaded: {}".format( found ))
 
-credentials.local		= {} # { description: (username, password), ... }
+
+credentials.local		= {}  # { description: (username, password), ... }
 
 
 def keypairs():
@@ -329,7 +320,7 @@ def keypairs():
             cred		= dict( username=username, password=password )
             try:
                 keypair		= licensing.KeypairEncrypted( ciphertext=r.ciphertext, salt=r.salt )
-                keypair.into_keypair( **cred ) # Ensure the supplied credentials can decrypt it
+                keypair.into_keypair( **cred )  # Ensure the supplied credentials can decrypt it
                 yield r.name, keypair, cred
                 saved	       += 1
             except Exception as exc:
@@ -471,28 +462,33 @@ uptime_basis			= timer()
 uptime_signalled		= False
 shutdown_signalled		= False
 logrotate_signalled		= False
-levelmap_change			= 0 # may become +'ve/-'ve
+levelmap_change			= 0  # may become +'ve/-'ve
 
 
 def uptime_request( signum, frame ):
     global uptime_signalled
     uptime_signalled		= True
 
+
 def shutdown_request( signum, frame ):
     global shutdown_signalled
     shutdown_signalled		= True
+
 
 def logrotate_request( signum, frame ):
     global logrotate_signalled
     logrotate_signalled		= True
 
+
 def loglevelup_request( signum, frame ):
     global levelmap_change
     levelmap_change	       += 1
 
+
 def logleveldn_request( signum, frame ):
     global levelmap_change
     levelmap_change	       -= 1
+
 
 def signal_service():
     """Service known signals.  When logging, default to log at WARNING, but ensure the
@@ -545,15 +541,16 @@ signal.signal( signal.SIGUSR2, logleveldn_request )
 signal.signal( signal.SIGTERM, shutdown_request )
 signal.signal( signal.SIGURG,  uptime_request )
 
-
 now				= timer()
 
+
 def daytime( ts ):
-    return timestamp( ts )
+    return Timestamp( ts )
 
 #
 # Curses-based Textual UI.
 #
+
 
 def message( window, text, row = 23, col = 0, clear = True ):
     rows,cols			= window.getmaxyx()
@@ -566,7 +563,7 @@ def message( window, text, row = 23, col = 0, clear = True ):
         window.addstr( int( row ), int( col ), text[:cols-col] )
         if clear:
             window.clrtoeol()
-    except:
+    except Exception:
         pass
 
 
@@ -593,7 +590,6 @@ def txt( win, config ):
         threading.active_count(),
         ', '.join( [ t.name for t in threading.enumerate() ] )))
 
-
     display			= 'licenses'		# Start off displaying Licenses
     input			= 0
     delta			= 0.0
@@ -603,7 +599,6 @@ def txt( win, config ):
                  % (  daytime( now ), delta,
                       input, curses.ascii.isprint( input ) and chr( input ) or '?'),
                  row = 0, clear = False )
-
 
         curses.panel.update_panels()
         curses.doupdate()
@@ -626,38 +621,37 @@ def txt( win, config ):
             winsel		= curses.newwin( * pansiz( rows, cols ) + panloc( 0, rows, cols ))
             try:
                 pansel.replace( winsel )
-            except:
+            except Exception:
                 pansel		= curses.panel.new_panel( winsel )
-
 
         # Process input, adjusting parameters
         if 0 < input <= 255 and chr( input ) == 'q':
             config['control']['done'] = True
             return
 
-        if 0 < input <= 255 and chr( input ) == '\f': # FF, ^L
+        if 0 < input <= 255 and chr( input ) == '\f':			# FF, ^L
             # ^L -- clear screen
             winsel.clear()
 
         # Select next space, adjust target temp
-        if input == curses.ascii.SP:				# ' '
+        if input == curses.ascii.SP:					# ' '
             if pansel.hidden():
                 pansel.show()
             else:
                 pansel.hide()
 
-        if input in ( curses.ascii.STX, curses.KEY_LEFT, 260 ):	# ^b, <--
+        if input in ( curses.ascii.STX, curses.KEY_LEFT, 260 ):		# ^b, <--
             selected		= ( selected - 1 ) % len( include )
-        if input in ( curses.ascii.ACK, curses.KEY_RIGHT, 261 ):# ^f, -->
+        if input in ( curses.ascii.ACK, curses.KEY_RIGHT, 261 ):        # ^f, -->
             selected		= ( selected + 1 ) % len( include )
-        if input in ( curses.ascii.DLE, curses.KEY_UP, 259 ):	# ^p, ^
-            if include[selected] == 'world':			#     |
+        if input in ( curses.ascii.DLE, curses.KEY_UP, 259 ):		# ^, ^p
+            if include[selected] == 'world':				# |
                 # do something to world...
                 pass
             else:
                 curses.beep()
-        if input in ( curses.ascii.SO, curses.KEY_DOWN, 258 ):	#     |
-            if include[selected] == 'world':			# ^n, v
+        if input in ( curses.ascii.SO, curses.KEY_DOWN, 258 ):		# |
+            if include[selected] == 'world':				# v, ^n
                 pass
             else:
                 curses.beep()
@@ -675,7 +669,6 @@ def txt( win, config ):
         last			= real
         now                     = real
 
-
         # Next frame of animation
         win.erase()
 
@@ -691,10 +684,12 @@ def txt( win, config ):
             areas		= len( include )
             across		= 1
             rank		= 1
+
             def cellyx():
                 y		= ( rows - topmargin ) // rank
                 x		= cols // across
                 return y,x
+
             height,width	= cellyx()
             while width > 60:
                 across	       += 1
@@ -703,10 +698,9 @@ def txt( win, config ):
                 rank	       += 1
                 height,width	= cellyx()
             assert height >= 10 and width >= 30
-        except:
+        except Exception:
             message( win, "Insufficient screen size (%d areas, %d ranks of %d  %dx%d cells); increase height/width, or reduce font size" % (
-                areas, rank, across, width, height ),
-                     col = 0, row = 0 )
+                areas, rank, across, width, height ), col = 0, row = 0 )
             win.refresh()
             time.sleep( 2 )
             continue
@@ -718,18 +712,21 @@ def txt( win, config ):
         for c in range( width, cols, width):
             win.vline( topmargin, c, curses.ACS_VLINE, rows - topmargin )
 
-
         # Update
         winsel.erase()
         wsrows, wscols		= winsel.getmaxyx()
 
         r			= 2
-        try:   winsel.hline( r, 1, curses.ACS_HLINE, wscols - 2 )
-        except: pass
+        try:
+            winsel.hline( r, 1, curses.ACS_HLINE, wscols - 2 )
+        except Exception:
+            pass
         r                      += 1
 
-        try:    winsel.hline( r, 1, curses.ACS_HLINE, wscols - 2 )
-        except: pass
+        try:
+            winsel.hline( r, 1, curses.ACS_HLINE, wscols - 2 )
+        except Exception:
+            pass
         r                      += 1
 
         winsel.border( 0 )
@@ -805,14 +802,14 @@ def http_exception( framework, status, message ):
             return framework.NotFound( message )
 
         if status == 406:
-            return framework.NotAcceptable() # Will not accept a message
+            return framework.NotAcceptable()			# Will not accept a message
 
     return Exception( "%d %s" % ( status, message ))
 
 
 def licenses_request( render, path, environ, accept, framework,
                          queries=None, posted=None,
-                         session=None, logged=None, # The user session
+                         session=None, logged=None,		# The user session
                          proxy=None ):
 
     """
@@ -846,13 +843,13 @@ def licenses_request( render, path, environ, accept, framework,
         response		= render.keylist( data )
     else:
         raise http_exception( framework, 406, "Unable to produce %s content" % (
-                content or accept or "unknown" ))
+            content or accept or "unknown" ))
     return content, response
 
 
 def credentials_request( render, path, environ, accept, framework,
                          queries=None, posted=None,
-                         session=None, logged=None, # The user session
+                         session=None, logged=None,		# The user session
                          proxy=None ):
 
     """
@@ -879,13 +876,13 @@ def credentials_request( render, path, environ, accept, framework,
         response		= render.keylist( data )
     else:
         raise http_exception( framework, 406, "Unable to produce %s content" % (
-                content or accept or "unknown" ))
+            content or accept or "unknown" ))
     return content, response
 
 
 def keypairs_request( render, path, environ, accept, framework,
                          queries=None, posted=None,
-                         session=None, logged=None, # The user session
+                         session=None, logged=None,		# The user session
                          proxy=None ):
 
     """
@@ -911,7 +908,7 @@ def keypairs_request( render, path, environ, accept, framework,
         response		= render.keylist( data )
     else:
         raise http_exception( framework, 406, "Unable to produce %s content" % (
-                content or accept or "unknown" ))
+            content or accept or "unknown" ))
     return content, response
 
 
@@ -950,22 +947,22 @@ def issue_request( render, path, environ, accept, framework,
 
     variables			= queries or posted or {}
 
-    # Full specifications of desired License.  Must include client_pubkey.  
+    # Full specifications of desired License.  Must include client_pubkey.
     confirm			= licensing.into_boolean( variables.get( 'confirm', False ), truthy=('',) )
     author			= variables.get( 'author' )
     author_pubkey		= variables.get( 'author_pubkey' )
     product			= variables.get( 'product' )
     client			= variables.get( 'client' )
-    client_pubkey		= variables.get( 'client_pubkey' ) # Must sign the issue request
+    client_pubkey		= variables.get( 'client_pubkey' )		# Must sign the issue request
     machine			= variables.get( 'machine' )
     signature			= variables.get( 'signature' )
-    number			= variables.get( 'number' ) # optional client-supplied serialization
+    number			= variables.get( 'number' )			# optional client-supplied serialization
 
     # TODO: verify the signature is that of the original canonicalized, serialized IssueRequest payload
-    # 
+    #
     #     ...?author=Blah,%20Inc&client_pubkey=...&machine=00010203-...0e0f&signature=9Dba...Cg==
     #         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    # 
+    #
     # We must serialize the request in a standard way in the sender and the receiver, because the
     # data may be sent as URL arguments or POST header variables.
     issue_request		= licensing.IssueRequest(
@@ -989,7 +986,6 @@ def issue_request( render, path, environ, accept, framework,
         'product':	lambda lic: issue_request['product'] and lic.author['product'] != issue_request['product'],
         'machine':	lambda lic: issue_request['machine'] and lic['machine'] != issue_request['machine'],
     }
-
 
     def prov_to_issue():
         """Produce a LicenseSigned suitable for the client to receive, use as a dependency of a new
@@ -1024,7 +1020,7 @@ def issue_request( render, path, environ, accept, framework,
             log.warning( "Failed: {exc}".format( exc=exc ))
             pass
         else:
-            if lic.client and lic.machine: # Exact match, with specific client and machine
+            if lic.client and lic.machine:  # Exact match, with specific client and machine
                 log.warning( "Issue request number={number}; Reissuing existing License: {lic}".format(
                     number=number, lic=lic if log.isEnabledFor( logging.INFO ) else licensing.into_b64( sig )))
                 return licensing.LicenseSigned(
@@ -1109,12 +1105,9 @@ def issue_request( render, path, environ, accept, framework,
         response		= render.keylist( data )
     else:
         raise http_exception( framework, 406, "Unable to produce %s content" % (
-                content or accept or "unknown" ))
+            content or accept or "unknown" ))
     log.info("Issue request number={number}; done".format( number=number ))
     return content, response
-
-
-
 
 
 def inline( filename ):
@@ -1286,8 +1279,7 @@ Disallow: /
                     login	= web.input().get( "login", 1 )
                     assert 0 <= int( login ) <= 2, "Invalid login Disable(0)/Normal(1)/Admin(2)"
                     pin		= web.input().get( "pin" )
-                    zones	= " ".join( z for z in session.zones.split()
-                                            if z in web.input() )
+
                     update	= None
                     if logged( admin=True ):
                         # If the current user is an admin user, we can alter an existing user
@@ -1307,26 +1299,22 @@ Disallow: /
                             log.info( "Updating user: %r" % ( name ))
                             kwds		= {}
                             kwds["login"]	= login
-                            if zones: # Update zones, if supplied
-                                kwds["zones"]	= zones
-                            if pin: # Update pin too, if supplied
+                            if pin:    # Update pin too, if supplied
                                 kwds["pin"]	= pin
                             with db_lock:
-                                update= db.update( 'users', where='user_id = $user_id',
-                                                   vars={ "user_id": target }, **kwds )
+                                update = db.update( 'users', where='user_id = $user_id',
+                                                    vars={ "user_id": target }, **kwds )
                             assert update, "Update failed"
                     if not update:
                         # Existing user not found and updated; insert a new one
                         assert pin, "Empty PIN"
-                        assert zones, "No zones delegated"
                         log.info( "Adding User: %r" % ( name ))
                         with db_lock:
                             insert = db.insert( 'users',
                                                 creator=session.user_id,
                                                 name=name.lower(),
                                                 pin=pin,
-                                                login=login,
-                                                zones=zones )
+                                                login=login )
                         assert insert, "Insert failed"
                 except Exception as exc:
                     log.info( "Add/Update user failure: %s: %s" % ( exc, traceback.format_exc() ))
@@ -1424,7 +1412,6 @@ Disallow: /
                 web.header( "Content-Type", "text/html" )
                 return response
 
-
             # Post via "go" button (or via event on PIN input); attempt to login
             ident		= None
             error		= None
@@ -1516,18 +1503,14 @@ Disallow: /
             # form data posted in web.input(), just like queries
             return self.GET( path, input_variable="posted" )
 
-
     class api_licenses( tabular_request_base ):
         request			= licenses_request
-
 
     class api_credentials( tabular_request_base ):
         request			= credentials_request
 
-
     class api_keypairs( tabular_request_base ):
         request			= keypairs_request
-
 
     class StaticAppDir( web.httpserver.StaticApp, object ):
         """Implement our own version of StaticApp and StaticMiddleware so we can return proper caching
@@ -1556,7 +1539,7 @@ Disallow: /
             path = posixpath.normpath(unquote(path))
             words = path.split('/')
             words = filter(None, words)
-            path = self.directory # << D'oh!
+            path = self.directory  # << D'oh!
             for word in words:
                 if os.path.dirname(word) or word in (os.curdir, os.pardir):
                     # Ignore components that are not a simple file/directory name
@@ -1566,8 +1549,8 @@ Disallow: /
                 path += '/'
             return path
 
-
     cache_max_age		= 30*24*60*60
+
     class StaticMiddlewareDir( web.httpserver.StaticMiddleware, object ):
         """WSGI middleware for serving static files from the specified basedir."""
         def __init__( self, app, prefix="/static/", basedir=os.getcwd() ):
@@ -1585,7 +1568,6 @@ Disallow: /
             else:
                 return self.app( environ, start_response )
 
-
     class LogMiddlewareCF( web.httpserver.LogMiddleware, object ):
         def log( self, status, environ ):
             cf_ip		= environ.get( 'HTTP_CF_CONNECTING_IP' )
@@ -1602,7 +1584,6 @@ Disallow: /
             if cf_country:
                 environ['REMOTE_PORT'] = cf_country
             return super( LogMiddlewareCF, self ).log( status, environ )
-
 
     # Get the required web.py classes from the local namespace.  The iface:port must always passed
     # on argv[1] to use app.run(), so use lower-level web.httpserver.runsimple interface.  This sets
@@ -1625,7 +1606,6 @@ Disallow: /
         """Implement the missing flush API to avoid warnings"""
         def flush(self):
             pass
-
 
     class Log( wsgilog.WsgiLog, object ):
         """Direct log messages to the correct log file, including stdout/stderr.  Because we're running
@@ -1665,7 +1645,7 @@ Disallow: /
 
     func			= app.wsgifunc( Log )
     func			= StaticMiddlewareDir( func, "/static/", os.path.dirname( __file__ ))
-    func			= LogMiddlewareCF( func ) # web.httpserver.LogMiddleware( app )
+    func			= LogMiddlewareCF( func )       # web.httpserver.LogMiddleware( app )
 
     # webpy.server		= web.httpserver.WSGIServer( config['address'], app )
 
@@ -1673,6 +1653,7 @@ Disallow: /
     # bound web server address (eg. if using a dynamically allocated port).  This will be redirected
     # to the access logfile, unless disabled via --no-access.  Also, this class weirdly captures config, so we can update
     from cheroot import wsgi
+
     class Server( wsgi.Server, object ):
         def serve( self ):
             sockname		= self.socket.getsockname()
@@ -1701,6 +1682,7 @@ Disallow: /
         webpy.server		= None
         logging.warning( "Web Interface Thread exiting" )
 
+
 # To stop the server externally, hit webpy.server.stop
 webpy.server			= None
 
@@ -1710,18 +1692,19 @@ def txtgui( config ):
     failure			= None
     try:        # Initialize curses
         stdscr			= curses.initscr()
-        curses.noecho();
-        curses.cbreak();
+        curses.noecho()
+        curses.cbreak()
         curses.halfdelay( 1 )
         stdscr.keypad( 1 )
 
         txt( stdscr, config )               # Enter the Curses mainloop
-    except:
+    except Exception:
         failure			= traceback.format_exc()
     finally:
         config.setdefault( 'control', {} )['done'] = True
         stdscr.keypad(0)
-        curses.echo() ; curses.nocbreak()
+        curses.echo()
+        curses.nocbreak()
         curses.endwin()
         time.sleep(.25)
     if failure:
@@ -1747,40 +1730,82 @@ def main( argv=None, **licensing_kwds ):
         epilog		= """\
 Implements Ed25519-signed cryptographic licensing web service and API.
 
+Issues license(s) for products and capabilities available to the client, where either
+
+  A) the server has credentials indicating ownership of the Licenses, and hence
+     authority to sub-license them, or
+
+  B) the License itself grants authority to be sub-licensed to any Agent
+     asking for a License
+
+Produces invoices for each transaction
+
 Performance benefits greatly from installation of (optional) ed25519ll package:
 
     python3 -m pip install ed25519ll
 """
     )
     ap.add_argument( '-v', '--verbose', action="count",
-                     default=0, 
+                     default=0,
                      help="Display logging information." )
     ap.add_argument( '-q', '--quiet', action="count",
                      default=0,
                      help="Reduce logging output." )
-    ap.add_argument( '-w', '--web', default="0.0.0.0:8000",
-                       help='enable web server on interface (default: 0.0.0.0:8000)' )
-    ap.add_argument( '--no-web', dest='web', action="store_false",
-                       help='Disable web interface and access log file (default: False)' )
-    ap.add_argument( '--access', default=ACCFILE,
+    ap.add_argument( '-w', '--web',
+                     default="0.0.0.0:8000",
+                     help='enable web server on interface (default: 0.0.0.0:8000)' )
+    ap.add_argument( '--no-web', dest='web',
+                     action="store_false",
+                     help='Disable web interface and access log file (default: False)' )
+    ap.add_argument( '--access',
+                     default=ACCFILE,
                      help="Log all web server access to log file (default: {ACCFILE}".format(
                          ACCFILE=ACCFILE ))
     ap.add_argument( '--no-access', dest='access',
-                     action="store_const", const=None,
+                     const=None, action="store_const",
                      help='Disable web server access log file, including stdout/stderr redirection' )
     ap.add_argument( '--no-gui', dest='gui',
-                       action="store_false", default=True,
-                       help='Disable Curses GUI interface (default: False)' )
-    ap.add_argument( '-c', '--config', action='append',
+                     default=True, action="store_false",
+                     help='Disable Curses GUI interface (default: False)' )
+    ap.add_argument( '-c', '--config',
+                     action='append',
                      help="Add another (higher priority) config file path." )
     ap.add_argument( '-l', '--log',
+                     default=None,
                      help="Log file, if desired (default, if text gui: {LOGFILE})".format( LOGFILE=LOGFILE ))
-    ap.add_argument( '-P', '--profile',
+    ap.add_argument( '--profile',
                      default=None,
                      help="Profile to stderr (only, if '-' specified), optionally saving data to a file (default: None)" )
-
+    ap.add_argument( '--client',
+                     default=None,
+                     help="This {DISTRIBUTION}server's client licensee's company name".format(
+                         DISTRIBUTION=licensing.DISTRIBUTION ))
+    ap.add_argument( '--domain',
+                     default=None,
+                     help="This {DISTRIBUTION} server's client licensee's domain; can be used to get public key via DKIM".format(
+                         DISTRIBUTION=licensing.DISTRIBUTION ))
+    ap.add_argument( '--product',
+                     default=licensing.PRODUCT_SERVER,
+                     help="This {DISTRIBUTION} server's client licensee's product name (if any; default: {PRODUCT})".format(
+                         DISTRIBUTION=licensing.DISTRIBUTION, PRODUCT=licensing.PRODUCT_SERVER ))
+    ap.add_argument( '-U', '--username',
+                     default=None,
+                     help="{DISTRIBUTION} Agent credentials username; likely an email address ('-' to read from input)".format(
+                         DISTRIBUTION=licensing.DISTRIBUTION ))
+    ap.add_argument( '-P', '--password',
+                     default=None,
+                     help="{DISTRIBUTION} Agent credentials password ('-' to read from input)".format(
+                         DISTRIBUTION=licensing.DISTRIBUTION ))
+    ap.add_argument( '-R', '--register', action='store_true',
+                     default=False,
+                     help="If necessary, create and save a new client Keypair" )
+    ap.add_argument( '-A', '--acquire', action='store_true',
+                     default=False,
+                     help="If no Agent Keypair or License is available, attempt to create and/or obtain one; provide --username/--password to encrypt"
+                     ", then use {ENVUSERNAME}/{ENVPASSWORD} environment vars to decrypt".format(
+                         ENVUSERNAME=licensing.ENVUSERNAME, ENVPASSWORD=licensing.ENVPASSWORD
+                     ))
     args = ap.parse_args( argv )
-
 
     # Set up logging; also, handle the degenerate case where logging has *already* been set up (and
     # basicConfig is a NO-OP), by (also) setting the logging level.
@@ -1790,7 +1815,6 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
     logging.basicConfig( **log_cfg )
     if args.verbose or args.quiet:
         logging.getLogger().setLevel( log_cfg['level'] )
-
 
     profiler			= None
     profiler_limit		= 25
@@ -1806,15 +1830,168 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
 
     # Any configuration files and licensing.load/load_keys should inspect these extra dirs
     global config_extras
-    config_extras	       += args.config
+    config_extras	       += args.config or []
     log.info( "Licensing configuration paths: {}".format( ', '.join( config_paths( '<file>', extra=config_extras ))))
 
     # Get some details about the Ed25519 version we're using, and suppress some nagging about
     # letting it generate random seeds.
-    warnings.simplefilter('ignore') # We know about handling Ed25519 random seeds...
+    warnings.simplefilter('ignore')  # We know about handling Ed25519 random seeds...
 
     log.info( "Ed25519 Version: {} / {} / {}".format(
         getattr( licensing.ed25519, '__version__', None ), licensing.ed25519.__package__, licensing.ed25519.__path__ ))
+
+    # Load our Crypto Licensing server Agent's .crypto-key* and .crypto-lic* files.
+    #
+    # This is the Agent's Keypair that will be assigned a License to *run* a Crypto Licensing
+    # server, on a particular Machine ID.
+    #
+    # This is *not* an authority to sign and *issue* Crypto Licensing server licenses.  That Keypair
+    # is different, and is loaded *into* the Crypto Licensing server, and is used to sign new
+    # Licenses that are issued to other parties.
+    #
+    # If necessary, we'll ask for a License to be issued by Dominion R&D Corp, to this Agent, for
+    # authorization to run on this machine.  This License will grant us the capability to issue
+    # sub-Licenses for a certain number of "master" Licenses (Licenses that do not have a
+    # pre-defined client baked into them, and thus could be sub-licensed to any client).  The Crypto
+    # Licensing server is expected to issue Licenses that comply with the rules established by the
+    # "master" License; if it is found that one is issuing invalid Licenses (ie. the "master" grants
+    # 10 machines, but more than 10 sub-Licenses have been issued), then its license will be revoked
+    # by blacklisting its public key.
+    #
+    # The secrets required to decrypt the licensing.KeypairEncrypted are expected to be in
+    # environment variables (specify '-' to read from input):
+    #
+    #     CRYPTO_LIC_USERNAME  # or --username
+    #     CRYPTO_LIC_PASSWORD  # or --password (unsafe)
+    #
+    # Then, find and load the Keypaar and License --product (split on spaces), joined by '-'):
+    #
+    #     crypto-licensing-server.crypto-{keypair,license}
+    #
+    basename			= '-'.join( [ segment.lower() for segment in args.product.split() ] )
+    log.log( logging.DETAIL, "Loading Agent Ed25519 Keypair from {}...".format( basename ))
+    # Load Agent Keypair, if any, using any credentials supplied in the environment
+    cl_username			= args.username or os.getenv( licensing.ENVUSERNAME )
+    cl_password			= args.password or os.getenv( licensing.ENVPASSWORD )
+    if args.password and args.password != '-':
+        log.warning( "It is recommended to not use '-P|--password ...'; specify '-' to read from input" )
+
+    # Cycle through the available Agent ID keys, and any License(s) for Dominion R&D's Crypto
+    # Licensing.  To create an unencrypted Keypair, no --username/--password may be specified.
+    # Otherwise, we must block here awaiting input.
+    username			= input_secure( "Enter {} username: ".format( basename )) if cl_username == '-' else cl_username
+    password			= input_secure( "Enter {} password: ".format( basename )) if cl_password == '-' else cl_password
+    userpass_input		= cl_username == '-' or cl_password == '-'
+    try:
+        # We're looking for a License authored by Dominion R&D Corp.  This might be encapsulated as
+        # one of the dependencies of the License we find (eg. if Dominion issues a License to some
+        # company, which includes the ability to run a crypto-licensing server), but we'll validate
+        # that the Grant was issued by Dominion R&D Corp.  For example, Dominion issues a License to
+        # awesome-inc.com to sub-License crypto-licensing servers.  They, in turn, issue a License
+        # to Лайка.ru to run a crypto-licensing server, and help them set it up.  When
+        # http://crypto-licensing.xn--80aa0aec.ru/ (crypto-licensing.Лайка.ru) issues a License for
+        # their software, part of the fees are paid to awesome-inc.com and some to dominionrnd.com.
+        # The final software installation uses crypto-licensing's authorized() function, which checks
+        # that each successive License's dependencies are correctly signed, and carries the original
+        # 'crypto-licensing' Grant through to the recipient.
+        dominion		= licensing.Agent(
+            name	= licensing.COMPANY,
+            domain	= licensing.DOMAIN,
+            product	= licensing.PRODUCT,
+            pubkey	= licensing.PUBKEY,
+        )
+        server			= None
+        if args.product and args.domain:
+            server		= licensing.Agent(
+                name	= args.client,
+                domain	= args.domain,
+                product	= args.product,
+            )
+
+        authorization		= licensing.authorized(
+            author	= dominion,
+            client	= server,
+            basename	= basename,
+            username	= username,
+            password	= password,
+            registering	= args.register,        # Issue an Agent ID if none found?
+            acquiring	= args.acquire,		# Acquire a License if none found?
+            extra	= config_extras,        # including any locally defined config dirs
+        )
+
+        loaded			= []
+        for key,lic in authorization:
+            if key is None or lic is None:
+                what		= "No License found for Agent ID {}".format(
+                    licensing.into_b64( key.vk )) if key else "No Agent ID Keypair found"
+                if userpass_input:
+                    what       += "; enter credentials"
+                    if password != "-":
+                        what   += " (leave blank to register w/ {}: {}".format(
+                            username or "(no username)", '*' * len( password or '' ) or "(no password)" )
+                log.warning( what )
+                if not userpass_input:
+                    continue
+                # No Agent ID/License loaded; username/password may be incorrect.  If none provided,
+                # then authorization may go on to register w/ the last-entered username/password.
+                # Either username or password may be updated, if desired.  Usually, credential input
+                # forces you to re-enter something you know to be correct; this loop does not.
+                # Failing to enter both credentials indicates satisfaction -- goes on to register a
+                # new Agent ID w/ credentials, if so.
+                userpass_updated = False
+                if cl_username == '-':
+                    username_update	= input_secure( "Enter {} username (leave empty for no change): ".format( basename ))
+                    userpass_updated |= bool( username_update )
+                    if username_update:
+                        username	= username_update
+                if cl_password == '-':
+                    password_update	= input_secure( "Enter {} password (leave empty for no change): ".format( basename ))
+                    userpass_updated |= bool( password_update )
+                    if password_update:
+                        password	= password_update
+                if userpass_updated:
+                    log.detail( "Supplying new credentials for {}: {}".format(
+                        username or "(no username)", '*' * len( password or '' ) or "(no password)" ))
+                    authorization.send( (username,password) )
+                else:
+                    log.detail( "No new credential(s) for {}: {}{}".format(
+                        username or "(no username)", '*' * len( password or '' ) or "(no password)",
+                        " (attempting to register new Agent ID)" if args.register else " (authorization failed)" ))
+                # No Keypair (or perhaps a Keypair, but no License) found; maybe credentials updated
+                continue
+            # A Keypair and License was found; remember it
+            loaded.append( (key,lic) )
+
+        # Collect up all the License grants; there may be more than one, if the user has purchased
+        # multiple Licenses at different times.  Ensures we only include a specific License once.
+        grants			= licensing.Grant()
+        once			= set()
+        for key,lic in loaded:
+            grants_lic		= lic.grants( once=once )
+            log.normal( "Located Agent Ed25519 Keypair {pubkey} w/ {product} License (from {_from}){extra}".format(
+                pubkey	= licensing.into_b64( key.vk ),
+                product	= lic and lic.license.author.product or "End-User",
+                _from	= "from {}".format( lic._from ) if lic._from else "locally issued",
+                extra	= (( " w/ grants: {}".format( grants_lic ) if log.isEnabledFor( logging.DEBUG ) else "" )
+                           + ( " merging w/ grants: {}".format( grants ) if log.isEnabledFor( logging.TRACE ) else "" )),
+            ))
+            grants	       |= grants_lic
+
+        # And, finally: ascertain whether we have a Grant to run Dominion R&D Corp's Crypto Licensing Server!
+        assert dominion.servicekey in grants, \
+            "Unable to find {}'s product {!r} service key {!r} in License Grants {}".format(
+                dominion.name, dominion.product, dominion.servicekey, grants )
+
+    except Exception as exc:
+        log.error( "Failed loading Agent Keypair and/or License: {exc}".format(
+            exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
+        with open( os.path.join( os.path.dirname( __file__ ), 'static', 'txt', 'CL-KEYPAIR-MISSING.txt' ), 'r' ) as f:
+            print( f.read().format(
+                DISTRIBUTION	= licensing.DISTRIBUTION,
+                KEYPATTERN	= licensing.KEYPATTERN,
+                LICENSE_OPTION	= '--license',
+            ), file=sys.stderr )
+        sys.exit( 1 )
 
     # Set up the global db, etc.
     db_setup()
@@ -1958,7 +2135,7 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
         while not shutdown_signalled and all( t.is_alive() for t in threads ):
             signal_service()
             time.sleep( .1 )
-    except:
+    except Exception:
         logging.error( "Main thread Exception: %s", traceback.format_exc() )
     finally:
         # Either the Web or the Curses GUI completed, or something blew up.  Shut all the
@@ -1973,7 +2150,7 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
 
         if args.profile:
             profiler.disable()
-            if args.profile != '-': # optionally dump stats to a filename
+            if args.profile != '-':  # optionally dump stats to a filename
                 profiler.dump_stats( args.profile )
             prof		= pstats.Stats( profiler, stream=sys.stderr )
             print( "\n\nTIME:", file=sys.stderr )

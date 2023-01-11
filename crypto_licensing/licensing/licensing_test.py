@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
+
 from __future__ import absolute_import, print_function, division, unicode_literals
 try:
-    from future_builtins import zip, map # Use Python 3 "lazy" zip, map
+    from future_builtins import zip, map  # noqa: F401; Use Python 3 "lazy" zip, map
 except ImportError:
     pass
 
@@ -9,17 +10,10 @@ import json
 import logging
 import multiprocessing
 import os
+import sys
 import pytest
-import time
 
-try: # Python2
-    from urllib2 import urlopen
-    from urllib import urlencode
-except ImportError: # Python3
-    from urllib.request import urlopen
-    from urllib.parse import urlencode
-
-from ..misc		import reprlib
+from ..misc		import reprlib, urlopen
 from ..			import licensing
 
 # If web.py or cpppo is unavailable, licensing.main cannot be used
@@ -34,14 +28,13 @@ except ImportError:
     web				= None
 try:
     from cpppo.server import network		# network.bench
-    from cpppo import dotdict			# multiprocessing.Manager().apidict
 except ImportError:
     network			= None
 try:
     import chacha20poly1305
 except ImportError:
     chacha20poly1305		= None
-    
+
 
 log				= logging.getLogger( "lic.svr")
 
@@ -58,16 +51,45 @@ licensing_cli_kwds		= {
     ],
 }
 
-CFGPATH				=  __file__[:-3] # trim off .py
+CFGPATH				=  __file__[:-3]  # trim off .py
 
 
-def test_licensing_issue_query():
+def test_generators():
+
+    class GenRaises( Exception ):
+        pass
+
+    def gen_raises():
+        """When a generator raises an Exception, it exits."""
+        yield 0
+        raise GenRaises( "In the middle of gen_raises" )
+        yield 1
+
+    def gen_catches():
+        """There is no way to resurrect a generator that has raised and Exception and exited."""
+        g		= gen_raises()
+        while True:
+            try:
+                x	= next( g )
+            except StopIteration:
+                break
+            except GenRaises as exc:
+                print( "Caught {exc}".format( exc=exc ) )
+                continue
+            yield x
+
+    with pytest.raises( GenRaises ):
+        list( gen_raises() )
+    assert list( gen_catches() ) == [0]
+
+
+def licensing_issue_query():
     # Issue a license to this machine-id, for client "End User, LLC".
-    
+
     # TODO: XXX: These requests are signed, proving that they came from the holder of the client
     # signing key.  However, anyone who captures the request and the signature can ask for the same
     # License!  Then, if they forge the Machine ID, they can run the license on that machine.
-    # 
+    #
     # This is only possible if the channel can be examined; public License Servers should be served
     # over SSL protected channels.
     request			= licensing.IssueRequest(
@@ -97,7 +119,7 @@ def licensing_cli( number, tests=None, address=None ):
 
     """
     log.info( "Client number={}; starting".format( number ))
-    query			= test_licensing_issue_query()
+    query			= licensing_issue_query()
     url				= "http://{host}:{port}/api/issue.json?{query}&number={number}".format(
         host	= address[0] if address else "localhost",
         port	= address[1] if address else 8000,
@@ -105,12 +127,12 @@ def licensing_cli( number, tests=None, address=None ):
         number	= number,
     )
     log.detail( "Client number={}; url: {}".format( number, reprlib.repr( url )))
-    response			= urlopen( url ).read().decode('utf-8')
+    response			= urlopen( url ).read().decode( 'UTF-8' )
     assert response
     log.detail( "Client number={}; response: {}".format( number, reprlib.repr( response )))
     data			= json.loads( response )
     #print( data )
-    assert data['list'] and data['list'][0]['signature'] == 'xnSfp/GDWsAvxVqarn+7AG8l0TIlSXD5kdHzb0sRxZsrm7o3uYLbPNxkcgvLV62m9V7BhKCU0unaMweSWX8TCA=='
+    assert data['list'] and data['list'][0]['signature'] == 'pN3libfAJ/OUV2vDr0bqC36WGEiB2k5SVZ9djN8MKaoGlEcM5IKS0Lxjuy2TFp9dgFtot/ku1hy9wOnpOC8DCw=='
     log.info( "Client number={}; done".format( number ))
 
 
@@ -118,21 +140,28 @@ def licensing_bench():
     with multiprocessing.Manager() as m:
 
         licensing_svr_kwds		= dict(
+            # We've got an end-user Keypair encrypted w/ these credentials available in our CFGPATH,
+            # and a matching Crypto Licensing Server License issued to this End User Agent ID's
+            # pubkey.
             argv	= [
+                #"-v",
                 "--no-gui",
                 "--config", CFGPATH,
                 "--web", "127.0.0.1:0",
+                "--username", "a@b.c",
+                "--password", "password",
+                #"--log", "/tmp/crypto-licensing-server.log",
                 #"--no-access",		# Do not redirect sys.stdout/stderr to an access log file
                 #"--profile", "licensing.prof", # Optionally, enable profiling (pip install ed25519ll helps...)
             ],
 
             # The master server control dict; 'control' may be converted to a different form (eg. a
             # multiprocessing.Manager().dict()) if necessary.  Each of the Licensing server thread-specific
-            # configs will be provided a reverence to this control (unless, for some reason, you don't want
+            # configs will be provided a reference to this control (unless, for some reason, you don't want
             # them to share it).  If *any* thread shuts down, they will all be stopped.
             server	= dict(
                 control		= m.apidict(
-                    1.0, # apidict timeout
+                    1.0,  # apidict timeout
                     done	= False
                 ),
             ),
@@ -173,10 +202,16 @@ def licensing_bench():
     return failed
 
 
-@pytest.mark.skipif( not licensing_main or not web or not network or not chacha20poly1305,
-                     reason="Licensing server needs web.py" )
+@pytest.mark.skipif(
+    not licensing_main
+    or not web
+    or not network
+    or not chacha20poly1305
+    or sys.platform == "darwin" and sys.version_info[0] >= 3,  # _pickle.PicklingError: Can't pickle <class 'multiprocessing.managers.apidict_proxy'>:
+    reason="Licensing server needs web.py, chacha20poly1305, cpppo"
+)
 def test_licensing_bench( tmp_path ):
     print( "Changing CWD to {}".format( tmp_path ))
     os.chdir( str( tmp_path ))
     assert not licensing_bench(), \
-        "One or more licensing_banch clients reported failure"
+        "One or more licensing_bench clients reported failure"
