@@ -425,34 +425,40 @@ class Duration( datetime.timedelta ):
     MN				=       60
 
     @classmethod
-    def _format( cls, delta ):
+    def _format( cls, delta, detail=False ):
+        if detail:
+            def abbrev( amount, label ):
+                return "{a} {l}{s} ".format( a=amount, l=label, s='' if amount == 1 else 's' )
+        else:
+            def abbrev( amount, label ):
+                return "{a}{l}".format( a=amount, l=label[0] )
         seconds			= delta.days * cls.DY + delta.seconds
         microseconds		= delta.microseconds
         result			= ''
 
         years			= seconds // cls.YR
         if years:
-            result             += "{years}y".format( years=years )
+            result             += abbrev( years, 'year' )
         y_secs			= seconds % cls.YR
 
         weeks			= y_secs // cls.WK
         if weeks:
-            result             += "{weeks}w".format( weeks=weeks )
+            result             += abbrev( weeks, 'week' )
         w_secs			= y_secs % cls.WK
 
         days			= w_secs // cls.DY
         if days:
-            result             += "{days}d".format( days=days )
+            result             += abbrev( days, 'day' )
         d_secs			= w_secs % cls.DY
 
         hours			= d_secs // cls.HR
         if hours:
-            result             += "{hours}h".format( hours=hours )
+            result             += abbrev( hours, 'hour' )
         h_secs			= d_secs % cls.HR
 
         minutes			= h_secs // cls.MN
         if minutes:
-            result             += "{minutes}m".format( minutes=minutes )
+            result             += abbrev( minutes, 'minute' )
 
         s			= h_secs % cls.MN
         is_us			= microseconds  % 1000 > 0
@@ -548,6 +554,9 @@ class Duration( datetime.timedelta ):
 
     def __str__( self ):
         return self._format( self )
+
+    def __repr__( self ):
+        return self._format( self, detail=True )
 
     def __float__( self ):
         return self.total_seconds()

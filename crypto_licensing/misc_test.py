@@ -27,8 +27,12 @@ log				= logging.getLogger( "misc_test" )
 
 
 def test_Duration():
-    d_str		= Duration( "1m33s123ms" )
-    assert str( d_str ) == "1m33.123s"
+    d			= Duration( "1m33s123ms" )
+    assert str( d ) == "1m33.123s"
+    assert repr( d ) == "1 minute 33.123s"
+    assert repr( d+60 ) == "2 minutes 33.123s"
+    assert repr( d+123456789 ) == "3 years 47 weeks 4 days 3 hours 34 minutes 42.123s"
+    assert str( d+123456789 ) == "3y47w4d3h34m42.123s"
 
 
 def test_Timestamp( monkeypatch ):
