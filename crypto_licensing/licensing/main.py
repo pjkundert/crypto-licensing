@@ -9,7 +9,8 @@
 # Crypto-licensing is free software: you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by the Free
 # Software Foundation, either version 3 of the License, or (at your option) any
-# later version.  See the LICENSE file at the top of the source tree.
+# later version.  It is also available under alternative (eg. Commercial)
+# licenses, at your option.  See the LICENSE file at the top of the source tree.
 #
 # It is distributed in the hope that it will be useful, but WITHOUT ANY
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
@@ -1920,47 +1921,53 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
         )
 
         loaded			= []
-        for key,lic in authorization:
-            if key is None or lic is None:
-                what		= "No License found for Agent ID {}".format(
-                    licensing.into_b64( key.vk )) if key else "No Agent ID Keypair found"
-                if userpass_input:
-                    what       += "; enter credentials"
-                    if password != "-":
-                        what   += " (leave blank to register w/ {}: {}".format(
-                            username or "(no username)", '*' * len( password or '' ) or "(no password)" )
-                log.warning( what )
-                if not userpass_input:
-                    continue
-                # No Agent ID/License loaded; username/password may be incorrect.  If none provided,
-                # then authorization may go on to register w/ the last-entered username/password.
-                # Either username or password may be updated, if desired.  Usually, credential input
-                # forces you to re-enter something you know to be correct; this loop does not.
-                # Failing to enter both credentials indicates satisfaction -- goes on to register a
-                # new Agent ID w/ credentials, if so.
-                userpass_updated = False
-                if cl_username == '-':
-                    username_update	= input_secure( "Enter {} username (leave empty for no change): ".format( basename ))
-                    userpass_updated |= bool( username_update )
-                    if username_update:
-                        username	= username_update
-                if cl_password == '-':
-                    password_update	= input_secure( "Enter {} password (leave empty for no change): ".format( basename ))
-                    userpass_updated |= bool( password_update )
-                    if password_update:
-                        password	= password_update
-                if userpass_updated:
-                    log.detail( "Supplying new credentials for {}: {}".format(
-                        username or "(no username)", '*' * len( password or '' ) or "(no password)" ))
-                    authorization.send( (username,password) )
+        try:
+            key,lic		= next( authorization )
+            while True:
+                if key is None or lic is None:
+                    what		= "No License found for Agent ID {}".format(
+                        licensing.into_b64( key.vk )) if key else "No Agent ID Keypair found"
+                    if userpass_input:
+                        what       += "; enter credentials"
+                        if password != "-":
+                            what   += " (leave blank to register w/ {}: {}".format(
+                                username or "(no username)", '*' * len( password or '' ) or "(no password)" )
+                    log.warning( what )
+                    if not userpass_input:
+                        continue
+                    # No Agent ID/License loaded; username/password may be incorrect.  If none provided,
+                    # then authorization may go on to register w/ the last-entered username/password.
+                    # Either username or password may be updated, if desired.  Usually, credential input
+                    # forces you to re-enter something you know to be correct; this loop does not.
+                    # Failing to enter both credentials indicates satisfaction -- goes on to register a
+                    # new Agent ID w/ credentials, if so.
+                    userpass_updated = False
+                    if cl_username == '-':
+                        username_update	= input_secure( "Enter {} username (leave empty for no change): ".format( basename ))
+                        userpass_updated |= bool( username_update )
+                        if username_update:
+                            username	= username_update
+                    if cl_password == '-':
+                        password_update	= input_secure( "Enter {} password (leave empty for no change): ".format( basename ))
+                        userpass_updated |= bool( password_update )
+                        if password_update:
+                            password	= password_update
+                    if userpass_updated:
+                        log.detail( "Supplying new credentials for {}: {}".format(
+                            username or "(no username)", '*' * len( password or '' ) or "(no password)" ))
+                        key,lic	= authorization.send( (username,password) )
+                        continue
+                    else:
+                        log.detail( "No new credential(s) for {}: {}{}".format(
+                            username or "(no username)", '*' * len( password or '' ) or "(no password)",
+                            " (attempting to register new Agent ID)" if args.register else " (authorization failed)" ))
+                    # No Keypair (or perhaps a Keypair, but no License) found; credentials NOTupdated
                 else:
-                    log.detail( "No new credential(s) for {}: {}{}".format(
-                        username or "(no username)", '*' * len( password or '' ) or "(no password)",
-                        " (attempting to register new Agent ID)" if args.register else " (authorization failed)" ))
-                # No Keypair (or perhaps a Keypair, but no License) found; maybe credentials updated
-                continue
-            # A Keypair and License was found; remember it
-            loaded.append( (key,lic) )
+                    # A Keypair and License was found; remember it
+                    loaded.append( (key,lic) )
+                key,lic		= next( authorization )
+        except StopIteration:
+            log.detail( "Completed licensing.authorized w/ {} Keypair/Licenses found".format( len(loaded) ))
 
         # Collect up all the License grants; there may be more than one, if the user has purchased
         # multiple Licenses at different times.  Ensures we only include a specific License once.

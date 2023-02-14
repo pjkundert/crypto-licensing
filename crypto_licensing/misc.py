@@ -8,7 +8,8 @@
 # Crypto-licensing is free software: you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by the Free
 # Software Foundation, either version 3 of the License, or (at your option) any
-# later version.  See the LICENSE file at the top of the source tree.
+# later version.  It is also available under alternative (eg. Commercial)
+# licenses, at your option.  See the LICENSE file at the top of the source tree.
 #
 # It is distributed in the hope that it will be useful, but WITHOUT ANY
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
@@ -872,17 +873,21 @@ def config_paths( filename, extra=None ):
     For other purposes (eg. loading complete files), the order is likely reversed!  The caller must
     do this manually.
 
+    By default, the "current" directory '.' will be used last, in the absence of any specific
+    'extra' directories.  For example, when searching for things, the current directory (most
+    specific) might be searched first, then most general directories.  However, for writing/saving
+    things, the most general writable directory might be used, and then (finally) the 'extra' or
+    current directory if that's the only writable place.  The reason we don't *always* use '.' if
+    other 'extra' directories are provided, is to allow the caller to *avoid* searching/writing
+    in/to the current directory!  Include '.' somewhere in 'extras' if this is appropriate.
+
     """
     yield os.path.join( os.getenv( 'APPDATA', os.sep + 'etc' ), filename )      # global app data dir, eg. /etc/ (most general)
     yield os.path.join( os.path.expanduser( '~' ), '.'+CONFIG_BASE, filename )  # user dir, ~username/.crypto-licensing/name
     yield os.path.join( os.path.expanduser( '~' ), '.' + filename )		# user dir, ~username/.name
-    for e in extra or []:							# any extra dirs...
-        yield os.path.join( e, filename )
-    yield filename								# relative to current working dir (most specific)
+    for e in ( [ '.' ] if extra is None else extra ):				# any extra dirs...
+        yield os.path.join( e, filename )					# default; relative to current working dir (most specific)
 
-
-# Default configuration files path, In 'configparser' expected order (most general to most specific)
-config_files			= list( config_paths( CONFIG_FILE ))
 
 try:
     ConfigNotFoundError		= FileNotFoundError
@@ -894,21 +899,22 @@ class ConfigFoundError( KeyError ):
     pass
 
 
-def config_open( name, mode=None, extra=None, skip=None, reverse=True, overwrite=False, **kwds ):
+def config_open( name, mode=None, extra=None, skip=None, reverse=None, overwrite=False, **kwds ):
     """Find and open all glob-matched file name(s) found on the standard or provided configuration file
     paths (plus any extra), in most general to most specific order.  Yield the open file(s), or
     raise a ConfigNotFoundError (a FileNotFoundError or IOError in Python3/2 if no matching file(s)
     at all were found, to be somewhat consistent with a raw open() call).
 
-    We traverse these in reverse order by default: nearest and most specific, to furthest and most
-    general, and any matching file(s) in ascending sorted order; specify reverse=False to obtain the
-    files in the most general/distant configuration first.
+    We traverse these in reverse order by default for "reading" mode: nearest and most specific, to
+    furthest and most general, and any matching file(s) in ascending sorted order; specify
+    reverse=False to obtain the files in the most general/distant configuration first.  The default
+    for 'reverse' is True for writing ('w' or 'a') modes, False for reading modes.
 
     By default, we assume the matching target file(s) are UTF-8/ASCII text files, and default to
     open in 'r' mode.
 
     A 'skip' glob pattern or predicate function taking a single name and returning True/False may be
-    supplied.
+    supplied.  By default, skips files w/ a trailing "~".
 
     When reading and writing to *existing* files, skip and the glob pattern matching is supported.
     When creating *new* files, of course skip (fnmatch) and glob patterns must be avoided (because
@@ -916,12 +922,22 @@ def config_open( name, mode=None, extra=None, skip=None, reverse=True, overwrite
     in the filename, or it will be impossible to create a file.
 
     Writing to existing files will (by default) raise a ConfigFoundError, unless overwrite=True.
+
     """
+    mode			= mode.lower() if mode else 'r'
+    is_writing			= 'w' in mode or 'a' in mode
+    is_globbing			= glob.has_magic( name )
+    assert not is_globbing or not is_writing, \
+        "Cannot use file name \"globbing\" while writing to {}".format( name )
+    if reverse is None:
+        reverse			= False if is_writing else True
+    if skip in (None, True):  # By default, skips any filename ending in "~"; prevents writing such a file unless skip=False
+        skip			= "*~"
     if isinstance( skip, type_str_base ):
         filtered		= lambda names: (n for n in names if not fnmatch.fnmatch( n, skip ))  # noqa: E731
     elif hasattr( skip, '__call__' ):
         filtered		= lambda names: (n for n in names if not skip( n ))  # noqa: E731
-    elif skip is None:
+    elif skip is False:
         filtered		= lambda names: names  # noqa: E731
     else:
         raise AssertionError( "Invalid skip={!r} provided".format( skip ))
@@ -929,12 +945,10 @@ def config_open( name, mode=None, extra=None, skip=None, reverse=True, overwrite
     search			= list( config_paths( name, extra=extra ))
     if reverse:
         search			= reversed( search )
-    is_globbing			= glob.has_magic( name )
     for fn in search:
         log.trace( "config_open search {fn!r}{globbing}".format(
             fn=fn, globbing=" w/ globbing" if is_globbing else "" ))
         for gn in sorted( filtered( glob.iglob( fn ) if is_globbing else [ fn ] )):
-            mode		= mode or 'r'
             if 'w' in mode and ( not overwrite ) and os.path.exists( gn ):
                 raise ConfigFoundError( gn )
             try:
@@ -952,6 +966,7 @@ def config_open( name, mode=None, extra=None, skip=None, reverse=True, overwrite
 
 
 def deduce_name( basename=None, extension=None, filename=None, package=None ):
+    """If no basename, use filename  .../<basename>.py, or package <basename>.submodule"""
     assert basename or ( filename or package ), \
         "Cannot deduce basename without either filename (__file__) or package (__package__)"
     if basename is None:
