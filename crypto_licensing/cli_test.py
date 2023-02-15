@@ -49,6 +49,7 @@ def test_cli( tmp_path ):
     assert Path( filename ) == tmp / 'something.crypto-keypair'
     assert vk == "O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik="
 
+    # We should find the just-saved KeypairEncrypted and be able to load it
     response			= runner.invoke( cli, [
         "-v",
         "--name", "something",  # to avoid collisions w/ ~/.crypto-licensing/crypto-licensing.crypto-key* Keypairs
@@ -59,7 +60,6 @@ def test_cli( tmp_path ):
         "--username", "a@b.c",
         "--password", "password",
     ] )
-
     print( "registered (again):\n{}\n\n".format( response.output ))
     assert response.exit_code == 0
     filename,sk,keypair		= json.loads( response.output )
@@ -85,7 +85,7 @@ def test_cli( tmp_path ):
         "--client", "End User",
         "--client-pubkey", vk,
     ] )
-    print( "license (again):\n{}\n\n".format( response.output ))
+    print( "license:\n{}\n\n".format( response.output ))
     assert response.exit_code == 0
     filename,license		= json.loads( response.output )
     assert Path( filename ) == tmp / 'something.crypto-license'

@@ -2234,10 +2234,9 @@ def registered(
     username		= None,		# The credentials for our agent's Keypair
     password		= None,
     extension		= None,		# Use exactly this extension for searching/registering
-    basename		= None,
     registering		= None,		# True by default, create a new Keypair if none found
     reverse_save	= None,		# None (False by default); saves from most general location to most specific
-    **kwds
+    **kwds  # eg. {base,file}name, package, extra=["..."], reverse_save, other open() args; see config_open
 ):
     """Find an existing Keypair w/ the given basename and extension, or create an authoring Keypair
     and save it, returning the Keypair.  Always searches from the most specific to the most general
@@ -2263,7 +2262,6 @@ def registered(
     ))
     try:
         _,keypair,_,keypair_raw = next( load_keys(
-            basename	= basename,
             extension	= extension or KEYPATTERN,  # Uses the glob pattern for searching
             username	= username,
             password	= password,
@@ -2302,7 +2300,6 @@ def registered(
 
     # Successfully created new Keypair; now, try to create file; will not overwrite
     for f in config_open_deduced(
-        basename	= basename,
         mode		= "wb",
         extension	= extension or KEYEXTENSION,  # But uses default extension on creation
         reverse		= reverse_save,
@@ -2378,10 +2375,9 @@ def license(
     grant		= None,
     machine_id_path	= None,
     confirm		= None,		# Validate License' author.pubkey from DNS
-    basename		= None,		# Desire license basename (if not deduced from filename/package)
     extension		= None,		# Defaults to exactly match LICEXTENSION
-    reverse_save	= None,		# None (False by default); saves from most general location to most specific
-    **kwds
+    reverse_save	= None,
+    **kwds  # eg. {base,file}name, package, extra=["..."], reverse_save, other open() args; see config_open
 ):
     """Create a License w/ the specified author and grant(s), and save it, returning the path.  By
     default, attempts to save in the most general (writable) location possible, but will use the CWD
@@ -2420,12 +2416,12 @@ def license(
         raise NotLicensed( "Failed to save a new License: {exc}".format( exc=exc ))
     else:
         # Successfully created License; now, try to create file; will not overwrite
+        log.detail( "Created License provenance {}".format( provenance ))
         for f in config_open_deduced(
-            basename	= basename,
             mode	= "wb",
             extension	= extension or LICEXTENSION,
-            reverse	= reverse_save,
             skip	= False,  # For writing/creating, of course we don't want to "skip" anything...
+            reverse	= reverse_save,
             **kwds
         ):
             try:
@@ -2485,12 +2481,11 @@ def verify(
 
 
 def load(
-    basename	= None,		# The target License file base name to search for
     mode	= None,
     extension	= None,
     confirm	= None,
     machine_id_path = None,
-    **kwds  # eg. extra=["..."], reverse=False, other open() args; see config_open
+    **kwds  # eg. {base,file}name, package, extra=["..."], reverse_save, other open() args; see config_open
 ):
     """Open and load all crypto-lic[ens{e,ing}] file(s) found on the config path(s) (and any
     extra=[...,...]  paths) containing a LicenseSigned provenance record.  By default, use the
@@ -2504,7 +2499,6 @@ def load(
 
     """
     for f in config_open_deduced(
-        basename	= basename,
         extension	= extension or LICPATTERN,
         mode		= mode,
         **kwds
@@ -2518,14 +2512,13 @@ def load(
 
 
 def load_keys(
-    basename	= None,		# The target Keypair file base name to search for
     mode	= None,
     extension	= None,
     username	= None,
     password	= None,		# Decryption credentials to use
     every	= False,
     detail	= False,        # Yield every file w/ origin + credentials info or exception?
-    **kwds  # eg. extra=["..."], reverse=False, other open() args; see config_open
+    **kwds  # eg. {base,file}name, package, extra=["..."], reverse_save, other open() args; see config_open
 ):
     """Load Ed25519 signing Keypair(s) from glob-matching file(s) with any supplied credentials.
     Yields all Encrypted/Plaintext Keypairs successfully opened (may be none at all), as a sequence
@@ -2587,7 +2580,6 @@ def load_keys(
     tried			= 0		# How many files seen and tried
     found			= 0		# How many Keypairs successfully found
     for f in config_open_deduced(
-        basename	= basename,
         extension	= extension or KEYPATTERN,
         mode		= mode,
         **kwds
@@ -2703,7 +2695,6 @@ def key_lic_sequence_logger( func ):
 
 
 def check_nolog(
-    basename		= None,			# Keypair/License file basename and open mode
     mode		= None,
     extension_keypair	= None,
     extension_license	= None,
@@ -2712,7 +2703,7 @@ def check_nolog(
     confirm		= None,
     machine_id_path	= None,
     constraints		= None,
-    **kwds  # eg. extra=["..."], reverse=False, other open() args; see config_open
+    **kwds  # eg. {base,file}name, package, extra=["..."], reverse_save, other open() args; see config_open
 ):
     """Load our agent key(s), check that License(s) have been (or can be) issued to our agent, for
     this machine and/or username, yielding a sequence of:
@@ -2749,7 +2740,6 @@ def check_nolog(
         for key_path, keypair_typed, cred, keypair_or_error in load_keys(
             username	= username,
             password	= password,
-            basename	= basename,
             mode	= mode,
             extension	= extension_keypair,
             every	= True,
@@ -2760,7 +2750,6 @@ def check_nolog(
     )
 
     licenses			= list( load(
-        basename	= basename,
         mode		= mode,
         extension	= extension_license,
         confirm		= confirm,
@@ -2883,14 +2872,13 @@ def authorized(
     client		= None,			# ..and the intended specific client Agent
     username		= None,			# The credentials for our client Agent's Keypair
     password		= None,
-    basename		= None,
     confirm		= None,
     machine_id_path	= None,
     constraints		= None,			# The additional constraints required of the author's license (if any)
     registering		= None,			# Default (to True) if necessary, create a new Keypair (register a new License client)
     acquiring		= None,			# Default (to True) if necessary, obtain/create a new License
-    reverse_save	= None,			# Default (to False) to save in the opposite of look-up (most general, to most specific location)
-    **kwds
+    reverse_save	= None,
+    **kwds  # eg. {base,file}name, package, extra=["..."], reverse_save, other open() args; see config_open
 ):
     """If possible, load and verify the agent's KeyPair (creating one if necessary).
 
@@ -2947,7 +2935,6 @@ def authorized(
             for key,lic in check_nolog(
                 username	= username,
                 password	= password,
-                basename	= basename,
                 confirm		= confirm,
                 constraints	= constraints,
                 machine_id_path	= machine_id_path,
@@ -3042,9 +3029,8 @@ def authorized(
                 why		= "End-user Keypair",
                 username	= username,
                 password	= password,
-                basename	= basename,
-                reverse_save	= reverse_save,
                 registering	= True,
+                reverse_save	= reverse_save,
                 **kwds
             )
             log.detail( "{state}: {action} {key}".format(
@@ -3086,8 +3072,10 @@ def authorized(
                 state	= state,
                 agent	= into_b64( key.vk ),
             ))
-            # TODO
 
+            #
+            # TODO: obtain a License
+            #
         else:
             log.normal( "{state}, w/ {keys} Agent IDs and {lics} Licenses found".format(
                 state	= state,

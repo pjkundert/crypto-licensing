@@ -23,7 +23,7 @@ import json
 import logging
 import os
 
-from .misc	import log_cfg, log_level, config_paths, CONFIG_BASE
+from .misc	import log_cfg, log_level, CONFIG_BASE
 from .		import licensing
 
 
@@ -62,14 +62,11 @@ def cli( verbose, quiet, private, log_file, why, name, reverse_save, extra ):
         cli.private	= True
     if why:
         cli.why		= why
-    if name is not None:
-        cli.name	= name
+    cli.name		= name or CONFIG_BASE
     if extra:
         cli.extra	= list( extra )
     if reverse_save is not None:
         cli.reverse_save = reverse_save
-    if extra or cli.verbosity:
-        log.normal( "Config paths: {}".format( ', '.join( config_paths( cli.name or CONFIG_BASE, extra=cli.extra ))))
 cli.private		= False  # noqa: E305
 cli.verbosity		= 0
 cli.why			= None
@@ -91,7 +88,7 @@ def check( username, password ):
     username		= username or os.getenv( licensing.ENVUSERNAME )
     password		= password or os.getenv( licensing.ENVPASSWORD )
     log.info( "Checking {why} w/ {username}: {password!r}".format(
-        why		= cli.why or cli.name or CONFIG_BASE,
+        why		= cli.why or cli.name,
         username	= username,
         password	= '*' * len( password ) if password else password,
     ))
@@ -105,7 +102,7 @@ def check( username, password ):
         extra		= cli.extra,
     )):
         if not keypair_raw:
-            log.warning( "No Agent ID Keypair {name}".format( name=cli.name or CONFIG_BASE))
+            log.warning( "No Agent ID Keypair {name}".format( name=cli.name ))
         else:
             key		= licensing.into_hex( keypair_raw.sk ) if cli.private else licensing.into_b64( keypair_raw.vk )
             licenses.setdefault( key, [] )
@@ -114,7 +111,7 @@ def check( username, password ):
     if cli.verbosity >= 0 and licenses:
         click.echo( licensing.into_JSON( licenses, indent=4, prefix=' ' * 4 ))
     assert licenses, \
-        "Failed to find any Agent ID Keypairs or Licenses for {}".format( cli.name or CONFIG_BASE )
+        "Failed to find any Agent ID Keypairs or Licenses for {}".format( cli.name )
 
 
 @click.command()
@@ -137,7 +134,7 @@ def registered( username, password, extension, registering, seed ):
     username		= username or os.getenv( licensing.ENVUSERNAME )
     password		= password or os.getenv( licensing.ENVPASSWORD )
     log.info( "Registering {why} w/ {username}: {password!r}".format(
-        why		= cli.why or cli.name or CONFIG_BASE,
+        why		= cli.why or cli.name,
         username	= username,
         password	= '*' * len( password ) if password else password,
     ))
@@ -145,7 +142,7 @@ def registered( username, password, extension, registering, seed ):
     keypair			= licensing.registered(
         seed		= codecs.decode( seed, 'hex_codec' ) if seed else None,
         why		= cli.why or username,
-        basename	= cli.name or CONFIG_BASE,
+        basename	= cli.name,
         extension	= extension,
         username	= username,
         password	= password,
@@ -193,7 +190,7 @@ def license( username, password, registering, author, domain, product, service, 
     username		= username or os.getenv( licensing.ENVUSERNAME )
     password		= password or os.getenv( licensing.ENVPASSWORD )
     log.info( "Licensing {why} w/ {username}: {password!r}".format(
-        why		= cli.why or cli.name or CONFIG_BASE,
+        why		= cli.why or cli.name,
         username	= username,
         password	= '*' * len( password ) if password else password,
     ))
@@ -210,7 +207,7 @@ def license( username, password, registering, author, domain, product, service, 
     # Locate the Agent ID Keypair to use to author the License.  Default to create if not found.
     keypair			= licensing.registered(
         why		= cli.why or product,
-        basename	= cli.name or CONFIG_BASE,
+        basename	= cli.name,
         username	= username,
         password	= password,
         registering	= registering,

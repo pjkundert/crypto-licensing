@@ -899,7 +899,7 @@ class ConfigFoundError( KeyError ):
     pass
 
 
-def config_open( name, mode=None, extra=None, skip=None, reverse=None, overwrite=False, **kwds ):
+def config_open( name, mode=None, extra=None, skip=None, reverse=None, overwrite=None, **kwds ):
     """Find and open all glob-matched file name(s) found on the standard or provided configuration file
     paths (plus any extra), in most general to most specific order.  Yield the open file(s), or
     raise a ConfigNotFoundError (a FileNotFoundError or IOError in Python3/2 if no matching file(s)
@@ -924,11 +924,14 @@ def config_open( name, mode=None, extra=None, skip=None, reverse=None, overwrite
     Writing to existing files will (by default) raise a ConfigFoundError, unless overwrite=True.
 
     """
+    log.warning( "config_open {} w/ extra {}, w/ {}".format( name, extra, kwds ))
     mode			= mode.lower() if mode else 'r'
     is_writing			= 'w' in mode or 'a' in mode
     is_globbing			= glob.has_magic( name )
     assert not is_globbing or not is_writing, \
         "Cannot use file name \"globbing\" while writing to {}".format( name )
+    if overwrite is None:
+        overwrite		= False
     if reverse is None:
         reverse			= False if is_writing else True
     if skip in (None, True):  # By default, skips any filename ending in "~"; prevents writing such a file unless skip=False
@@ -941,15 +944,17 @@ def config_open( name, mode=None, extra=None, skip=None, reverse=None, overwrite
         filtered		= lambda names: names  # noqa: E731
     else:
         raise AssertionError( "Invalid skip={!r} provided".format( skip ))
-
     search			= list( config_paths( name, extra=extra ))
     if reverse:
-        search			= reversed( search )
+        search.reverse()
+    log.debug( "config_open {}ing paths: {}".format( 'Writ' if is_writing else 'Read', ', '.join( search )))
     for fn in search:
         log.trace( "config_open search {fn!r}{globbing}".format(
             fn=fn, globbing=" w/ globbing" if is_globbing else "" ))
         for gn in sorted( filtered( glob.iglob( fn ) if is_globbing else [ fn ] )):
-            if 'w' in mode and ( not overwrite ) and os.path.exists( gn ):
+            if is_writing and ( not overwrite ) and os.path.exists( gn ):
+                log.info( "config_open refuse {fn!r} in mode {mode!r}; will not overwrite existing file".format(
+                    fn=fn, mode=mode ))
                 raise ConfigFoundError( gn )
             try:
                 f		= open( gn, mode=mode or 'r', **kwds )
@@ -986,20 +991,21 @@ def deduce_name( basename=None, extension=None, filename=None, package=None ):
     return name
 
 
-def config_open_deduced( basename=None, mode=None, extension=None, filename=None, package=None, overwrite=False, **kwds ):
+def config_open_deduced( basename=None, extension=None, filename=None, package=None, **kwds ):
     """Find any glob-matched configuration file(s), optionally deducing the basename from the provided
     __file__ filename or __package__ package name, returning the open file or raising a ConfigNotFoundError
     (a FileNotFoundError, or IOError in Python2).
 
     If writing, will default to not overwrite an existing file; will raise a ConfigFoundError instead.
     """
-    for f in config_open(
-            name	= deduce_name(
-                basename=basename, extension=extension, filename=filename, package=package ),
-            mode	= mode or 'r',
-            overwrite	= overwrite,
-            **kwds
-    ):
+    name			= deduce_name(
+        basename	= basename,
+        extension	= extension,
+        filename	= filename,
+        package		= package,
+    )
+    log.info( "Opening {} w/ {}".format( name, kwds ))
+    for f in config_open( name, **kwds ):
         yield f
 
 
