@@ -1,4 +1,6 @@
 {
     "ciphertext":"d211f72ba97e9cdb68d864e362935a5170383e70ea10e2307118c6d955b814918ad7e28415e2bfe66a5b34dddf12d275",
-    "salt":"000000000000000000000000"
+    "salt":"000000000000000000000000",
+    "vk":"O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik=",
+    "vk_signature":"YxRSIqHzZs5lfmWYm09wdKS8QJPSunH/Gjty/MQN5PQ3B+HkDeMtspXLWE9qbwYPGcNd1pBGaGpWAxW10l6RBg=="
 }

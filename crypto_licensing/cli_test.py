@@ -1,7 +1,10 @@
 import json
 import os
 
-from pathlib		import Path
+try:
+    from pathlib	import Path
+except ImportError:
+    from pathlib2	import Path
 
 import pytest  # noqa: F401
 
@@ -16,9 +19,9 @@ def test_cli( tmp_path ):
 
     tmp				= Path( tmp_path )
     cwd				= tmp / "cwd"
-    os.mkdir( cwd )
+    os.mkdir( str( cwd ))
     print( "Changing CWD to {}".format( cwd ))
-    os.chdir( cwd )
+    os.chdir( str( cwd ))
 
     response			= runner.invoke( cli, "--help" )
     print( "--help:\n{}\n\n".format( response.output ))
@@ -61,7 +64,7 @@ def test_cli( tmp_path ):
     assert response.exit_code == 0
     filename,sk,keypair		= json.loads( response.output )
     assert Path( filename ) == tmp / 'something.crypto-keypair'
-    assert sk == "00000000000000000000000000000000000000000000000000000000000000003b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29"
+    assert sk == "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA7aie8zrakLWKjqNAqbw1zZTIVdx3iQ6Y6wEihi1naKQ=="
 
     # Now that we have an Agent ID, let's create a self-signed License for something.  This is just
     # to remember some fact for later, and assure ourself that we have provenance for this fact.

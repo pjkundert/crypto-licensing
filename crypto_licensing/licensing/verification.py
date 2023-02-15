@@ -2082,23 +2082,35 @@ class KeypairEncrypted( Serializable ):
     Can be supplied w/ a raw signing key or an ed25519.Keypair as an unencrypted key, along with
     username/password.  If no signing key at all is provided, one will be generated.
 
+    If possible, derives the public key and signs it, proving that the author did, indeed, have the
+    signing key corresponding to the public key.
+
     """
-    __slots__			= ('salt', 'ciphertext')
+    __slots__			= ('salt', 'ciphertext', 'vk', 'vk_signature')
     serializers			= dict(
         salt		= into_hex,
         ciphertext	= into_hex,
+        vk		= into_b64,
+        vk_signature	= into_b64,
     )
 
-    def __init__( self, sk=None, vk=None, salt=None, ciphertext=None, username=None, password=None,
+    def __init__( self, sk=None, vk=None, vk_signature=None, salt=None, ciphertext=None, username=None, password=None,
                   **kwds ):
-        if not ( bool( ciphertext is not None and salt is not None ) ^ bool( password is not None and username is not None )):
+        has_encrypted		= ciphertext is not None and salt is not None
+        has_credentials		= password is not None and username is not None
+        if not ( has_encrypted or has_credentials ):
             raise TypeError( "Insufficient arguments to create an Encrypted Keypair; either ciphertext/salt or password/username required" )
-        if not ( ciphertext and salt ) and not sk:
+        if not has_encrypted and not sk:
+            # Neither ciphertext supplied, nor plaintext signing key; must want a new Keypair
             sk			= authoring( why="No Keypair supplied to KeypairEncrypted" )
-        if hasattr( sk, 'sk' ):
-            # Provided with a raw ed25519.Keypair or KeypairPlaintext; extract its sk, and use any supplied vk for confirmation
-            _,edsk		= into_keys( sk )
-            sk			= into_b64( edsk )
+        elif sk:
+            # A signing key provided (and maybe also encrypted); lets get the private key bytes
+            if hasattr( sk, 'sk' ):
+                # Provided with a raw ed25519.Keypair or KeypairPlaintext; extract its sk, and use any supplied vk for confirmation
+                _,edsk		= into_keys( sk )
+                sk		= into_b64( edsk )
+            else:
+                sk		= into_bytes( sk, ('base64',) )
         if salt:
             self.salt		= into_bytes( salt, ('hex',) )
         else:
@@ -2108,6 +2120,11 @@ class KeypairEncrypted( Serializable ):
             self.salt		= os.urandom( 12 )
         assert len( self.salt ) == 12, \
             "Expected 96-bit salt, not {!r}".format( self.salt )
+        # And, if a pubkey and/or pubkey signature provided, also get their bytes
+        vk			= into_bytes( vk, ('base64',) )
+        vk_signature		= into_bytes( vk_signature, ('base64',) )
+
+        # We've normalized everything provided into bytes; now produce/verify ciphertext
         if ciphertext:
             # We are provided with the encrypted seed (tag + ciphertext).  Done!  But, we don't know
             # the original Keypair, here, so we can't verify below.
@@ -2121,11 +2138,9 @@ class KeypairEncrypted( Serializable ):
             # key material to produce the seed ciphertext.  Remember, the Ed25519 private signing
             # key always includes the 256-bit public key appended to the raw 256-bit private key
             # material.
-            sk			= into_bytes( sk, ('base64',) )
             seed		= sk[:32]
-            keypair		= authoring( seed=seed, why="provided unencrypted signing key" )
+            keypair		= authoring( seed=seed, why="Signing key supplied to KeypairEncrypted" )
             if vk:
-                vk		= into_bytes( vk, ('base64',) )
                 assert keypair.vk == vk, \
                     "Failed to derive Ed25519 signing key from supplied data"
             key			= self.key( username=username, password=password )
@@ -2138,6 +2153,34 @@ class KeypairEncrypted( Serializable ):
             keypair_rec		= self.into_keypair( username=username, password=password )
             assert keypair is None or keypair_rec == keypair, \
                 "Failed to recover original key after decryption"
+            if vk:
+                assert keypair_rec.vk == vk, \
+                    "Failed deriving Ed25519 signing key {} matching claimed public key {}".format(
+                        into_b64( keypair_rec.vk ), into_b64( vk ))
+            if sk:
+                assert keypair_rec.sk == sk, \
+                    "Failed deriving Ed25519 signing key {} matching claimed signing key {}".format(
+                        into_b64( keypair_rec.sk ), into_b64( sk ))
+            vk,sk		= keypair_rec
+        if vk:
+            if vk_signature:
+                # Verify supplied/deduced vk with provided vk_signature.  This allows us to validate
+                # that the supplied vk was self-signed, even if we never decrypt the ciphertext.
+                try:
+                    ed25519.crypto_sign_open( vk_signature + vk, vk )
+                except Exception as exc:
+                    raise_from( ValueError( "Failed to verify Ed25519 pubkey {} signature".format( into_b64( vk ))), exc )
+            elif sk:
+                # We have both vk and sk, either supplied or deduced, but no vk_signature.  Produce it.
+                vk_signature	= ed25519.crypto_sign( vk, sk )[:64]
+
+        # If an encrypted (ciphertext-only) is supplied, we will not be able to deduce the
+        # vk/vk_signature, and these will remain None.  Thus, only iff no username/password.
+        self.vk			= vk
+        self.vk_signature	= vk_signature
+        assert vk_signature or not has_credentials, \
+            "No pubkey signature deduced, but credentials are available: {}".format( self )
+
         super( KeypairEncrypted, self ).__init__( **kwds )
 
     def key( self, username, password ):
@@ -2190,7 +2233,7 @@ def registered(
     why			= None,
     username		= None,		# The credentials for our agent's Keypair
     password		= None,
-    extension		= None,		# Defaults to exactly match KEYEXTENSION
+    extension		= None,		# Use exactly this extension for searching/registering
     basename		= None,
     registering		= None,		# True by default, create a new Keypair if none found
     reverse_save	= None,		# None (False by default); saves from most general location to most specific
@@ -2199,8 +2242,7 @@ def registered(
     """Find an existing Keypair w/ the given basename and extension, or create an authoring Keypair
     and save it, returning the Keypair.  Always searches from the most specific to the most general
     config location.  However, defaults to save in the most general (writable) location possible,
-    but will use the CWD if necessary.  Unlike load_keys, looks for an exact match on the extension,
-    not a pattern -- since that's exactly what we're trying to create.
+    but will use the CWD if necessary.
 
     Will not overwrite an existing file of the same name, if found!  If the Keypair can be loaded
     with the given credentials, it is considered as registered and returned.  Otherwise, this is
@@ -2222,7 +2264,7 @@ def registered(
     try:
         _,keypair,_,keypair_raw = next( load_keys(
             basename	= basename,
-            extension	= extension or KEYEXTENSION,  # Only files with exactly matching extension
+            extension	= extension or KEYPATTERN,  # Uses the glob pattern for searching
             username	= username,
             password	= password,
             detail	= True,
@@ -2262,7 +2304,7 @@ def registered(
     for f in config_open_deduced(
         basename	= basename,
         mode		= "wb",
-        extension	= extension or KEYEXTENSION,
+        extension	= extension or KEYEXTENSION,  # But uses default extension on creation
         reverse		= reverse_save,
         skip		= False,  # For writing/creating, of course we don't want to "skip" anything...
         **kwds
@@ -2567,7 +2609,7 @@ def load_keys(
         encrypted		= None
         try:
             try:
-                encrypted	= KeypairEncrypted( **keypair_dict )  # accepts ciphertext, salt
+                encrypted	= KeypairEncrypted( username=username, password=password, **keypair_dict )
             except TypeError as exc:  # Incorrect arguments, ...
                 raise_from( TypeError( "Keypair w/ keywords {} probably isn't a KeypairEncrypted: {}".format(
                     ', '.join( keypair_dict ), exc

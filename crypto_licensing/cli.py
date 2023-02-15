@@ -120,9 +120,10 @@ def check( username, password ):
 @click.command()
 @click.option( "--username", help="The email address (if encrypted Keypair desired))" )
 @click.option( "--password", help="The password" )
+@click.option( "--extension", help="A specific extension to look for" )
 @click.option( "--registering/--no-registering", default=True, help="If no Keypair found, create and register a new one" )
 @click.option( "--seed", help="A 32-byte (256-bit) Seed, in Hex (default: random)" )
-def registered( username, password, registering, seed ):
+def registered( username, password, extension, registering, seed ):
     """Determine if the specified name and credentials are registered.  Locate (or create and save, by
     default) an Agent ID Ed25519 Keypair.
 
@@ -145,6 +146,7 @@ def registered( username, password, registering, seed ):
         seed		= codecs.decode( seed, 'hex_codec' ) if seed else None,
         why		= cli.why or username,
         basename	= cli.name or CONFIG_BASE,
+        extension	= extension,
         username	= username,
         password	= password,
         registering	= registering,
@@ -152,7 +154,6 @@ def registered( username, password, registering, seed ):
         extra		= cli.extra,
     )
 
-    # Decrypt to obtain .vk
     keypair_raw		= keypair.into_keypair(
         username	= username,
         password	= password,
@@ -160,7 +161,7 @@ def registered( username, password, registering, seed ):
 
     val				= [ keypair._from ]
     if cli.verbosity >= 0:
-        val.append( licensing.into_hex( keypair_raw.sk ) if cli.private else licensing.into_b64( keypair_raw.vk ))
+        val.append( licensing.into_b64( keypair_raw.sk ) if cli.private else licensing.into_b64( keypair_raw.vk ))
     if cli.verbosity >= 1:
         assert cli.private or isinstance( keypair, licensing.KeypairEncrypted ), \
             "Cannot display un-encrypted Keypair without --private option"
@@ -220,7 +221,7 @@ def license( username, password, registering, author, domain, product, service, 
         username	= username,
         password	= password,
     )
-    key				= licensing.into_hex( keypair_raw.sk ) if cli.private else licensing.into_b64( keypair_raw.vk )
+    key				= licensing.into_b64( keypair_raw.sk ) if cli.private else licensing.into_b64( keypair_raw.vk )
     log.detail( "Authoring Agent ID {what}: {key}, from {path}".format(
         what	= "Keypair" if cli.private else "Pubkey",
         key	= key,

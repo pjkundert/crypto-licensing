@@ -164,14 +164,21 @@ def test_KeypairEncrypted_smoke():
     assert kp_e_ser == """\
 {
     "ciphertext":"d211f72ba97e9cdb68d864e362935a5170383e70ea10e2307118c6d955b814918ad7e28415e2bfe66a5b34dddf12d275",
-    "salt":"000000000000000000000000"
+    "salt":"000000000000000000000000",
+    "vk":"O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik=",
+    "vk_signature":"YxRSIqHzZs5lfmWYm09wdKS8QJPSunH/Gjty/MQN5PQ3B+HkDeMtspXLWE9qbwYPGcNd1pBGaGpWAxW10l6RBg=="
 }"""
     kp_r			= KeypairEncrypted( **json.loads( kp_e_ser ))
     assert str( kp_r ) == kp_e_ser
 
-    # We can also reconstruct from just seed and salt
+    # We can also reconstruct from just seed and salt (but no kv/vk_signature will be available
     kp_e2			= KeypairEncrypted( salt=salt, ciphertext=kp_e.ciphertext )
-    assert str( kp_e2 ) == kp_e_ser
+    assert str( kp_e2 ) == """\
+{
+    "ciphertext":"d211f72ba97e9cdb68d864e362935a5170383e70ea10e2307118c6d955b814918ad7e28415e2bfe66a5b34dddf12d275",
+    "salt":"000000000000000000000000"
+}"""
+
     assert kp_e.into_keypair( username=username, password=password ) \
         == kp_r.into_keypair( username=username, password=password ) \
         == kp_e2.into_keypair( username=username, password=password )
@@ -189,14 +196,16 @@ def test_KeypairEncrypted_smoke():
     assert kp_a_ser == """\
 {
     "ciphertext":"aea5129b033c3072be503b91957dbac0e4c672ab49bb1cc981a8955ec01dc47280effc21092403509086caa8684003c7",
-    "salt":"010101010101010101010101"
+    "salt":"010101010101010101010101",
+    "vk":"cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ=",
+    "vk_signature":"yaxxz6ZxCWFdtgRF1JnK+k46UYjv650f/J1yHHf9olUpLXR/KrBOrAD71cC/dAc2FVOTqzCv1S5IXhULho2QAg=="
 }"""
 
 
 @pytest.mark.skipif( not chacha20poly1305, reason="Needs ChaCha20Poly1305" )
 def test_KeypairEncrypted_load_keys():
     enduser_keypair		= authoring( seed=enduser_seed, why="from enduser seed" )
-    # load just the one encrypted cpppo-keypair (no glob wildcard on extension)
+    # load just the one encrypted crypto-keypair (no glob wildcard on extension)
     (keyname,keypair_encrypted,keycred,keypair), = load_keys(
         extension="crypto-keypair", username=username, password=password,
         extra=[os.path.dirname( __file__ )], filename=__file__, detail=True )
