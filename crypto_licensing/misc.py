@@ -900,15 +900,21 @@ class ConfigFoundError( KeyError ):
 
 
 def config_open( name, mode=None, extra=None, skip=None, reverse=None, overwrite=None, **kwds ):
-    """Find and open all glob-matched file name(s) found on the standard or provided configuration file
-    paths (plus any extra), in most general to most specific order.  Yield the open file(s), or
-    raise a ConfigNotFoundError (a FileNotFoundError or IOError in Python3/2 if no matching file(s)
-    at all were found, to be somewhat consistent with a raw open() call).
+    """Find and open all glob-matched file name(s) found on the standard or provided configuration
+    file paths (plus any extra), for reading in most specific to most general order (or in 'reverse'
+    for writing).  Yield the open file(s), or raise a ConfigNotFoundError (a FileNotFoundError or
+    IOError in Python3/2 if no matching file(s) at all were found, to be somewhat consistent with a
+    raw open() call).
+
+    If an absolute path is provided, only it (or those matching any glob pattern provided) are
+    traversed; otherwise, we search the config_paths + extras.
 
     We traverse these in reverse order by default for "reading" mode: nearest and most specific, to
     furthest and most general, and any matching file(s) in ascending sorted order; specify
     reverse=False to obtain the files in the most general/distant configuration first.  The default
-    for 'reverse' is True for writing ('w' or 'a') modes, False for reading modes.
+    for 'reverse' is True for writing ('w' or 'a') modes, False for reading modes.  Since we
+    normally attempt to open any available file first, we'll generally only be writing a new file;
+    putting it by default in the most generic writable place by default makes sense.
 
     By default, we assume the matching target file(s) are UTF-8/ASCII text files, and default to
     open in 'r' mode.
@@ -924,7 +930,6 @@ def config_open( name, mode=None, extra=None, skip=None, reverse=None, overwrite
     Writing to existing files will (by default) raise a ConfigFoundError, unless overwrite=True.
 
     """
-    log.warning( "config_open {} w/ extra {}, w/ {}".format( name, extra, kwds ))
     mode			= mode.lower() if mode else 'r'
     is_writing			= 'w' in mode or 'a' in mode
     is_globbing			= glob.has_magic( name )
@@ -944,9 +949,17 @@ def config_open( name, mode=None, extra=None, skip=None, reverse=None, overwrite
         filtered		= lambda names: names  # noqa: E731
     else:
         raise AssertionError( "Invalid skip={!r} provided".format( skip ))
-    search			= list( config_paths( name, extra=extra ))
-    if reverse:
-        search.reverse()
+    # If an absolute or ~[user] path is provided, ignore config search paths and extras; otherwise,
+    # forward/reverse search for the name relative to the config_paths + extra.
+    name			= os.path.expanduser( name )
+    if os.path.isabs( name ):
+        search			= [ name ]
+        if extra:
+            log.warning( "Ignoring specified extra search paths: {extra}".format( extra=', '.join( extra )))
+    else:
+        search			= list( config_paths( name, extra=extra ))
+        if reverse:
+            search.reverse()
     log.debug( "config_open {}ing paths: {}".format( 'Writ' if is_writing else 'Read', ', '.join( search )))
     for fn in search:
         log.trace( "config_open search {fn!r}{globbing}".format(
@@ -959,9 +972,9 @@ def config_open( name, mode=None, extra=None, skip=None, reverse=None, overwrite
             try:
                 f		= open( gn, mode=mode or 'r', **kwds )
             except Exception as exc:
-                # The file couldn't be opened (eg. permissions)
-                log.debug( "config_open failed {fn!r} in mode {mode!r}: {exc}".format(
-                    fn=fn, mode=mode,
+                # The file couldn't be opened (eg. permissions, bad open args/kwds)
+                log.debug( "config_open failed {fn!r} in mode {mode!r} w/ {kwds}: {exc}".format(
+                    fn=fn, mode=mode, kwds=', '.join( '{}={!r}'.format( k, v ) for k,v in kwds.items() ),
                     exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
                 pass
             else:
@@ -971,7 +984,12 @@ def config_open( name, mode=None, extra=None, skip=None, reverse=None, overwrite
 
 
 def deduce_name( basename=None, extension=None, filename=None, package=None ):
-    """If no basename, use filename  .../<basename>.py, or package <basename>.submodule"""
+    """If no basename, use filename  .../<basename>.py, or package <basename>.submodule.
+
+    An absolute path 'basename' will remain unchanged.  If no extension is present, the supplied
+    'extension' will be appended.
+
+    """
     assert basename or ( filename or package ), \
         "Cannot deduce basename without either filename (__file__) or package (__package__)"
     if basename is None:
@@ -984,7 +1002,8 @@ def deduce_name( basename=None, extension=None, filename=None, package=None ):
             if '.' in basename:
                 basename	= basename[:basename.find( '.' )]   # up to first '.'
     name			= basename
-    if extension and '.' not in name:
+    # No identifiable extension on root; this safely ignores path components containing '.'
+    if extension and not os.path.splitext( name )[1]:
         if extension[0] != '.':
             name	       += '.'
         name		       += extension

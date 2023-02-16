@@ -16,9 +16,6 @@ PYTESTOPTS	= # --capture=no --log-cli-level=INFO  # DEBUG # 23 == DETAIL # 25 ==
 PY3TEST		= TZ=$(TZ) $(PY3) -m pytest $(PYTESTOPTS)
 PY2TEST		= TZ=$(TZ) $(PY2) -m pytest $(PYTESTOPTS)
 
-export CRYPTO_LIC_PASSWORD
-export CRYPTO_LIC_USERNAME
-
 .PHONY: all test clean build install upload
 all:			help
 
@@ -44,7 +41,7 @@ doctest:
 
 
 analyze:
-	flake8 -j 1 --max-line-length=200 \
+	flake8 --color never -j 1 --max-line-length=200 \
 	  --ignore=W503,E201,E202,E127,E221,E222,E223,E226,E231,E241,E242,E251,E265,E272,E274,E275 \
 	  --extend-exclude="ed25519_djb.py,djbec.py,__init__.py" \
 	  crypto_licensing
@@ -64,6 +61,9 @@ pylint:
 #
 CREDENTIALS	= $(abspath $(HOME)/.crypto-licensing )
 
+export CRYPTO_LIC_PASSWORD
+export CRYPTO_LIC_USERNAME
+
 # PRODUCT		= "Awesome Product"
 # SERVICE		= "awesome-product"
 # CLIENT		= "Someone Special"
@@ -79,8 +79,13 @@ test-server:			products
 	rm licensing.db; $(PY3) -m crypto_licensing.licensing -vvvv --no-gui --username=a@b.c --password=password --config crypto_licensing/licensing
 
 
+# 
 # An Agent ID we can use as an End User.  This is the Agent ID to which the final License is issued.
-# Make it available under the "basename" of any service wanting to run using this Agent ID.
+# Make it available under the "<basename>.crypto-keypair-..." of any service wanting to issue
+# end-user Licenses to run using this Agent ID, eg. a Crypto Licensing Server.  This is the password
+# required at runtime by the server; it will dynamically issue a License to itself (and its
+# machine-id), from the crypto-licensing-server.crypto-license issued to this public key.
+# 
 end-user:			USERNAME=a@b.c
 end-user:			CRYPTO_LIC_PASSWORD=password
 end-user:			$(CREDENTIALS)/end-user.crypto-keypair
@@ -131,6 +136,8 @@ crypto-licensing:		GRANTS="{\"crypto-licensing\": {\
 }}"
 crypto-licensing:		$(CREDENTIALS)/crypto-licensing.crypto-license
 
+
+# The end-user License to run the Crypto Licensing Server
 crypto-licensing-server:	AUTHOR="Dominion R&D Corp."
 crypto-licensing-server:	DOMAIN=dominionrnd.com
 crypto-licensing-server:	PRODUCT="Crypto Licensing Server"
@@ -138,7 +145,7 @@ crypto-licensing-server:	SERVICE="crypto-licensing-server"
 crypto-licensing-server:	USERNAME=perry@dominionrnd.com
 crypto-licensing-server:	CRYPTO_LIC_PASSWORD=$(shell cat ~/.crypto-licensing/crypto-licensing-server.crypto-password )
 crypto-licensing-server:	CLIENT="End User"
-crypto-licensing-server:	CLIENT_PUBKEY="fzbBlsjV5UQl2vF/89cQMizbWrQDOaN+PciMQnGIUNg="
+crypto-licensing-server:	CLIENT_PUBKEY="fzbBlsjV5UQl2vF/89cQMizbWrQDOaN+PciMQnGIUNg="  # end-user.crypto-keypair
 crypto-licensing-server:	LICENSE_OPTIONS=--dependency $(CREDENTIALS)/crypto-licensing.crypto-license # --no-confirm
 crypto-licensing-server:	GRANTS="{\"crypto-licensing-server\": {\
     \"override\": { \
@@ -156,19 +163,26 @@ crypto-licensing-server:	crypto-licensing $(CREDENTIALS)/crypto-licensing-server
 .SECONDARY:
 
 # Create .crypto-keypair from seed; note: if the make rule fails, intermediate files are deleted.
-# We expect any password to be transmitted in CRYPTO_LIC_PASSWORD env. var.
-$(CREDENTIALS)/%.crypto-keypair: $(CREDENTIALS)/%.crypto-seed  print-CRYPTO_LIC_PASSWORD
-	$(PY3) -m crypto_licensing $(GLOBAL_OPTIONS) registered	\
-	    --username $(USERNAME)				 \
-	    --name $(notdir $(basename $@ ))			  \
-	    --seed $$( cat $< )
+# We expect any password to be transmitted in CRYPTO_LIC_PASSWORD env. var.  If the target name is
+# an absolute path, no config-path searching will be done.  Otherwise, we'll save in the
+# most-specific writable location (instead of the default most-general).
+%.crypto-keypair: %.crypto-seed
+	$(PY3) -m crypto_licensing $(GLOBAL_OPTIONS)		\
+	    --name $(basename $@ )				\
+	    --reverse-save $(KEYPAIR_EXTRA)			\
+	    registered						\
+	    --username $(USERNAME)				\
+	    --seed $$( cat $< ) $(KEYPAIR_OPTIONS)
 
 # Create .crypto-license, signed by .crypto-keypair
-$(CREDENTIALS)/%.crypto-license: $(CREDENTIALS)/%.crypto-keypair print-CRYPTO_LIC_PASSWORD
-	$(PY3) -m crypto_licensing $(GLOBAL_OPTIONS) license	\
-	    --username $(USERNAME) --no-registering		 \
-	    --client $(CLIENT) --client-pubkey $(CLIENT_PUBKEY)	  \
-	    --name $(notdir $(basename $@ )) --grant $(GRANTS)     \
+%.crypto-license: %.crypto-keypair
+	$(PY3) -m crypto_licensing $(GLOBAL_OPTIONS)		\
+	    --name $(basename $@ )				\
+	    --reverse-save $(KEYPAIR_EXTRA)			\
+	   license						\
+	    --username $(USERNAME) --no-registering		\
+	    --client $(CLIENT) --client-pubkey $(CLIENT_PUBKEY)	\
+	    --grant $(GRANTS)					\
 	    --author $(AUTHOR) --domain $(DOMAIN) --product $(PRODUCT) $(LICENSE_OPTIONS)
 
 # 

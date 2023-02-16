@@ -39,7 +39,7 @@ log				= logging.getLogger( __package__ )
 #
 # Generate Agent Keypairs and Licenses
 #
-# --filename	The name of the Keypair or License, eg. Some Name ==> some-name.crypto-key
+# --name	The name of the Keypair or License; recommend eg. Some Name ==> some-name.crypto-key
 #
 @click.group()
 @click.option('-v', '--verbose', count=True)
@@ -47,7 +47,7 @@ log				= logging.getLogger( __package__ )
 @click.option('-p', '--private/--no-private', default=False, help="Disclose Private Key material")
 @click.option('-l', '--log-file', help="Log file name")
 @click.option('-w', '--why', help="What is being done (for logging details)")
-@click.option('-n', '--name', help="Defines the file name author Keypair read from, License is saved under (default: {file})".format( file=CONFIG_BASE ))
+@click.option('-n', '--name', help="Defines the file name loaded/saved (default: {base})".format( base=CONFIG_BASE ))
 @click.option('-r', '--reverse-save/--no-reverse-save', default=None, help="Reverse the search for saving Keypair/License files; from most specific to most general" )
 @click.option('-e', '--extra', multiple=True, help="Extra config directories to use, from most general to most specific" )
 def cli( verbose, quiet, private, log_file, why, name, reverse_save, extra ):
