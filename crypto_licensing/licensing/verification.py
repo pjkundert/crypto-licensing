@@ -2675,22 +2675,28 @@ def key_lic_sequence_logger( func ):
     @wraps( func )
     def wrapper( *args, **kwds ):
         labelled		= False
-        for key,lic in func( *args, **kwds ):
-            level		= logging.NORMAL if key and lic else logging.DETAIL
-            if log.isEnabledFor( level ):
-                if not labelled:
-                    log.normal( "{:56} {:20} {:20} {:16}: {}".format(
-                        'License', 'Client', 'Author', 'Product', 'Keypair'
+        func_iter		= func( *args, **kwds )
+        try:
+            payload		= None
+            while True:
+                key,lic		= func_iter.send( payload )
+                level		= logging.NORMAL if key and lic else logging.DETAIL
+                if log.isEnabledFor( level ):
+                    if not labelled:
+                        log.normal( "{:56} {:20} {:20} {:16}: {}".format(
+                            'License', 'Client', 'Author', 'Product', 'Keypair'
+                        ))
+                        labelled	= True
+                    log.log( level, "{:56} {:20.20} {:20.20} {:16.16}: {}{}".format(
+                        'N/A' if not hasattr( lic, '_from' ) or not lic._from else os.path.basename( lic._from ),
+                        'N/A' if not lic or not lic.license.client else "{}/{}".format( lic.license.client.name, into_b64( lic.license.client.pubkey )),
+                        'N/A' if not lic else "{}/{}".format( lic.license.author.name, into_b64( lic.license.author.pubkey )),
+                        'N/A' if not lic or not lic.license.author.product else lic.license.author.product,
+                        'N/A' if not key else into_b64( key.vk ), key._from if hasattr( key, '_from' ) else '',
                     ))
-                    labelled	= True
-                log.log( level, "{:56} {:20.20} {:20.20} {:16.16}: {}{}".format(
-                    'N/A' if not hasattr( lic, '_from' ) or not lic._from else os.path.basename( lic._from ),
-                    'N/A' if not lic or not lic.license.client else "{}/{}".format( lic.license.client.name, into_b64( lic.license.client.pubkey )),
-                    'N/A' if not lic else "{}/{}".format( lic.license.author.name, into_b64( lic.license.author.pubkey )),
-                    'N/A' if not lic or not lic.license.author.product else lic.license.author.product,
-                    'N/A' if not key else into_b64( key.vk ), key._from if hasattr( key, '_from' ) else '',
-                ))
-            yield key,lic
+                payload		= ( yield key,lic )
+        except StopIteration:
+            pass
     return wrapper
 
 
@@ -3005,7 +3011,6 @@ def authorized(
                 # grants.  If we're back here, they haven't (yet) found one; yield the next
                 # (collecting any .send( (username,password) )
                 credentials		= ( yield key,lic )
-                log.warning( "Received new credentials: {!r}".format( credentials ) )
                 if credentials:
                     # The caller supplied new credentials via .send( (username,password) ).  Restart
                     # the License authorization process using the new credentials.  (We do this test
@@ -3050,7 +3055,6 @@ def authorized(
                     state	= state,
                     keys	= len( licenses )))
                 credentials	= ( yield None, None )
-                log.warning( "Received new credentials: {!r}".format( credentials ) )
                 if credentials:
                     licenses		= dict()
                     username,password	= credentials

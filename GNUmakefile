@@ -41,7 +41,7 @@ doctest:
 
 
 analyze:
-	flake8 --color never -j 1 --max-line-length=200 \
+	$(PY3) -m flake8 --color never -j 1 --max-line-length=200 \
 	  --ignore=W503,E201,E202,E127,E221,E222,E223,E226,E231,E241,E242,E251,E265,E272,E274,E275 \
 	  --extend-exclude="ed25519_djb.py,djbec.py,__init__.py" \
 	  crypto_licensing

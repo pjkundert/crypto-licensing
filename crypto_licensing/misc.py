@@ -999,7 +999,7 @@ def deduce_name( basename=None, extension=None, filename=None, package=None ):
         else:
             basename		= package
             if '.' in basename:
-                basename	= basename[:basename.find( '.' )]	# up to first '.' in package name
+                basename	= basename[:basename.find( '.' )]       # up to first '.' in package name
     name			= basename
     if extension and not os.path.splitext( name )[1]:
         # No identifiable extension on root; this safely ignores path components containing '.'
