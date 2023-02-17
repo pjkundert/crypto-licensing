@@ -3004,7 +3004,8 @@ def authorized(
                 # they might have purchased multiple licenses, and could be accumulating their
                 # grants.  If we're back here, they haven't (yet) found one; yield the next
                 # (collecting any .send( (username,password) )
-                credentials		= yield key,lic
+                credentials		= ( yield key,lic )
+                log.warning( "Received new credentials: {!r}".format( credentials ) )
                 if credentials:
                     # The caller supplied new credentials via .send( (username,password) ).  Restart
                     # the License authorization process using the new credentials.  (We do this test
@@ -3048,7 +3049,8 @@ def authorized(
                 log.normal( "{state}, w/ {keys} Agent IDs available -- enter different credentials?".format(
                     state	= state,
                     keys	= len( licenses )))
-                credentials	= yield None, None
+                credentials	= ( yield None, None )
+                log.warning( "Received new credentials: {!r}".format( credentials ) )
                 if credentials:
                     licenses		= dict()
                     username,password	= credentials

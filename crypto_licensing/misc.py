@@ -994,16 +994,15 @@ def deduce_name( basename=None, extension=None, filename=None, package=None ):
         "Cannot deduce basename without either filename (__file__) or package (__package__)"
     if basename is None:
         if filename:
-            basename		= os.path.basename( filename )      # eg. '/a/b/c/d.py' --> 'd.py'
-            if '.' in basename:
-                basename	= basename[:basename.rfind( '.' )]  # up to last '.'
+            basename		= os.path.basename( filename )		# eg. '/a/b/c/d.py' --> 'd.py'
+            basename,_		= os.path.splitext( basename )		# up to last '.' in filename (the extension)
         else:
             basename		= package
             if '.' in basename:
-                basename	= basename[:basename.find( '.' )]   # up to first '.'
+                basename	= basename[:basename.find( '.' )]	# up to first '.' in package name
     name			= basename
-    # No identifiable extension on root; this safely ignores path components containing '.'
     if extension and not os.path.splitext( name )[1]:
+        # No identifiable extension on root; this safely ignores path components containing '.'
         if extension[0] != '.':
             name	       += '.'
         name		       += extension
