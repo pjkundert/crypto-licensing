@@ -395,7 +395,7 @@ def into_UUIDv4( machine ):
     return machine
 
 
-def machine_UUIDv4( machine_id_path=None):
+def machine_UUIDv4( machine_id_path=None ):
     """Identify the machine-id as an RFC 4122 UUID v4. On Linux systems w/ systemd, get from
     /etc/machine-id, as a UUID v4: https://www.man7.org/linux/man-pages/man5/machine-id.5.html.
     On MacOS and Windows, use uuid.getnode(), which derives from host-specific data (eg. MAC
@@ -1741,7 +1741,8 @@ class License( Serializable ):
         # fail.
 
         # First, scan the constraints to see if any are callable
-
+        if constraints:
+            log.info( "Enforcing constraints: {}".format( constraints ))
         # Verify all sub-license start/length durations comply with this License' duration.
         # Remember, these start/length specify the validity period of the License to be
         # sub-licensed, not the execution time of the installation!
@@ -2928,6 +2929,7 @@ def authorized(
         LICENSING	= 3
         DONE		= 4
 
+    credentials_seen		= { (username,password) }
     licenses			= dict()        # Remember all Keypair... --> [ License, ... ] under current credentials
     state			= State.INITIAL
     while state is not State.DONE:
@@ -2937,7 +2939,6 @@ def authorized(
             # Look for Agent Keypairs and any associated Licenses issued to it, filtered by the
             # Author we're looking for.  We want to keep CHECKING, again and again, while the
             # caller provides new credentials.
-            credentials			= None
             for key,lic in check_nolog(
                 username	= username,
                 password	= password,
@@ -3011,13 +3012,15 @@ def authorized(
                 # grants.  If we're back here, they haven't (yet) found one; yield the next
                 # (collecting any .send( (username,password) )
                 credentials		= ( yield key,lic )
-                if credentials:
+                if credentials and credentials not in credentials_seen:
                     # The caller supplied new credentials via .send( (username,password) ).  Restart
-                    # the License authorization process using the new credentials.  (We do this test
-                    # here (not at the start of the loop), to catch the case where only None,None is
-                    # yielded from check).
+                    # the License authorization process using the new credentials, IFF they are
+                    # different from previously seen credentials.  (We do this test here (not at the
+                    # start of the loop), to catch the case where only None,None is yielded from
+                    # check).
                     licenses		= dict()
                     username,password	= credentials
+                    credentials_seen.add( credentials )
                     state		= State.INITIAL
                     break
             else:
@@ -3055,9 +3058,10 @@ def authorized(
                     state	= state,
                     keys	= len( licenses )))
                 credentials	= ( yield None, None )
-                if credentials:
+                if credentials and credentials not in credenticals_seen:
                     licenses		= dict()
                     username,password	= credentials
+                    credentials_seen.add( credentials )
                     state		= State.INITIAL
                 else:
                     # No keypairs (or too many), no new credentials.  We're done the authorize process.
