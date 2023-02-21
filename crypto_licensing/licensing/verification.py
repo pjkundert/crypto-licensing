@@ -1645,7 +1645,7 @@ class License( Serializable ):
         signature	= None,
         confirm		= None,
         machine_id_path	= None,
-        dependencies	= False,  # Default to not include this LicenseSigned in returned constraints['dependencies']
+        dependencies	= None,  # Defaults to not include this LicenseSigned in returned constraints['dependencies']
         **constraints
     ):
         """Verify that the License is valid:
@@ -1999,6 +1999,7 @@ class LicenseSigned( Serializable ):
         signature	= None,
         confirm		= None,
         machine_id_path	= None,
+        dependencies	= None,
         **constraints
     ):
         return self.license.verify(
@@ -2006,7 +2007,9 @@ class LicenseSigned( Serializable ):
             signature		= signature or self.signature,
             confirm		= confirm,
             machine_id_path	= machine_id_path,
-            **constraints )
+            dependencies	= dependencies,
+            **constraints
+        )
 
 
 class KeypairPlaintext( Serializable ):
@@ -2229,6 +2232,39 @@ def authoring(
     return keypair
 
 
+def save_keypair(
+    keypair,
+    why			= None,
+    extension		= None,
+    reverse_save	= None,
+    **kwds  # eg. {base,file}name, package, extra=["..."], reverse_save, other open() args; see config_open
+):
+    """
+    Successfully created new Keypair; now, try to create file; will not overwrite.
+    """
+    if why is None:
+        why			= "the"
+    for f in config_open_deduced(
+        mode		= "wb",
+        extension	= extension or KEYEXTENSION,  # But uses default extension on creation
+        reverse		= reverse_save,
+        skip		= False,  # For writing/creating, of course we don't want to "skip" anything...
+        **kwds
+    ):
+        try:
+            with f:
+                keypair.save( f )  # keypair._from preserves f.name
+        except Exception as exc:
+            log.detail( "Writing {why} Keypair to {path} failed: {exc}".format( why=why, path=f.name, exc=exc ))
+            raise NotRegistered( "Failed to register {why} Keypair: {exc}".format( why=why, exc=exc ))
+        else:
+            log.normal( "Wrote {why} Keypair to {path}: {pubkey}".format( why=why, path=keypair._from, pubkey=keypair['vk'] ))
+            break
+    else:
+        raise NotRegistered( "Failed to find a place to save {why} Keypair".format( why=why ))
+    return keypair._from
+
+
 def registered(
     seed		= None,
     why			= None,
@@ -2247,7 +2283,7 @@ def registered(
     Will not overwrite an existing file of the same name, if found!  If the Keypair can be loaded
     with the given credentials, it is considered as registered and returned.  Otherwise, this is
     considered an error; you already have a Keypair regsitered with perhaps different credentials,
-    and you should probably be trying to 'load_keys' before you register a new Agent ID...
+    and you should probably be trying to 'load_keypairs' before you register a new Agent ID...
 
     Returns the resultant KeypairEntryped or KeypairPlaintext, w/ a ._from property == path.
 
@@ -2262,7 +2298,7 @@ def registered(
         why	= why,
     ))
     try:
-        _,keypair,_,keypair_raw = next( load_keys(
+        _,keypair,_,keypair_raw = next( load_keypairs(
             extension	= extension or KEYPATTERN,  # Uses the glob pattern for searching
             username	= username,
             password	= password,
@@ -2281,13 +2317,16 @@ def registered(
             pubkey	= into_b64( keypair_raw.vk ),
         ))
         return keypair
+
     if not registering:
         raise NotRegistered( "Failed to find a {why} Keypair; registering a new one was declined".format(
             why		= why,
         ))
 
     # Not already registered, and registering is desired; create one.
-    keypair_raw			= authoring( seed=seed, why=why )
+    keypair_raw			= authoring(
+        seed		= seed,
+        why		= why )
     if username and password:
         keypair			= KeypairEncrypted(
             sk		= keypair_raw.sk,
@@ -2299,35 +2338,11 @@ def registered(
             sk		= keypair_raw.sk,
         )
 
-    # Successfully created new Keypair; now, try to create file; will not overwrite
-    for f in config_open_deduced(
-        mode		= "wb",
-        extension	= extension or KEYEXTENSION,  # But uses default extension on creation
-        reverse		= reverse_save,
-        skip		= False,  # For writing/creating, of course we don't want to "skip" anything...
+    save_keypair(
+        keypair,
+        reverse_save	= reverse_save,
         **kwds
-    ):
-        try:
-            with f:
-                keypair.save( f )  # keypair._from preserves f.name
-        except Exception as exc:
-            log.detail( "Writing {why} Keypair to {path} failed: {exc}".format(
-                why	= why,
-                path	= f.name,
-                exc	= exc,
-            ))
-            raise NotRegistered( "Failed to register new Keypair: {exc}".format( exc=exc ))
-        else:
-            log.normal( "Wrote {why} Keypair to {path}: {pubkey}".format(
-                why	= why,
-                path	= keypair._from,
-                pubkey	= into_b64( keypair_raw.vk ),
-            ))
-            break
-    else:
-        raise NotRegistered( "Failed to find a place to save a new {why} Keypair".format(
-            why		= why,
-        ))
+    )
     return keypair
 
 
@@ -2365,6 +2380,39 @@ def issue(
         machine_id_path	= machine_id_path )
 
 
+def save(
+    provenance,
+    why			= None,
+    extension		= None,
+    reverse_save	= None,
+    **kwds  # eg. {base,file}name, package, extra=["..."], reverse_save, other open() args; see config_open
+):
+    """
+    Successfully created License; now, try to create file; will not overwrite.  Returns the saved License's path.
+    """
+    if why is None:
+        why			= "the"
+    for f in config_open_deduced(
+        mode		= "wb",
+        extension	= extension or LICEXTENSION,
+        skip		= False,  # For writing/creating, of course we don't want to "skip" anything...
+        reverse		= reverse_save,
+        **kwds
+    ):
+        try:
+            with f:
+                provenance.save( f )  # LicenseSigned._from preserves f.name
+        except Exception as exc:
+            log.detail( "Writing {why} License to {path} failed: {exc}".format( why=why, path=f.name, exc=exc ))
+            raise NotLicensed( "Failed to save {why} License: {exc}".format( why=why, exc=exc ))
+        else:
+            log.normal( "Wrote {why} License to {path}".format( why=why, path=provenance._from ))
+            break
+    else:
+        raise NotLicensed( "Failed to find a place to save {why} License".format( why=why ))
+    return provenance._from
+
+
 def license(
     author,				# w/ a .keypair, or
     author_sigkey	= None,		# an separate signing key
@@ -2377,7 +2425,6 @@ def license(
     machine_id_path	= None,
     confirm		= None,		# Validate License' author.pubkey from DNS
     extension		= None,		# Defaults to exactly match LICEXTENSION
-    reverse_save	= None,
     **kwds  # eg. {base,file}name, package, extra=["..."], reverse_save, other open() args; see config_open
 ):
     """Create a License w/ the specified author and grant(s), and save it, returning the path.  By
@@ -2416,36 +2463,15 @@ def license(
         ))
         raise NotLicensed( "Failed to save a new License: {exc}".format( exc=exc ))
     else:
-        # Successfully created License; now, try to create file; will not overwrite
         log.detail( "Created License provenance {}".format( provenance ))
-        for f in config_open_deduced(
-            mode	= "wb",
-            extension	= extension or LICEXTENSION,
-            skip	= False,  # For writing/creating, of course we don't want to "skip" anything...
-            reverse	= reverse_save,
-            **kwds
-        ):
-            try:
-                with f:
-                    provenance.save( f )  # LicenseSigned._from preserves f.name
-            except Exception as exc:
-                log.detail( "Writing {why} License to {path} failed: {exc}".format(
-                    why		= why,
-                    path	= f.name,
-                    exc		= exc,
-                ))
-                raise NotLicensed( "Failed to issue new License: {exc}".format( exc=exc ))
-            else:
-                log.normal( "Wrote {why} License to {path}".format(
-                    why		= why,
-                    path	= provenance._from,
-                ))
-                break
-        else:
-            raise NotLicensed( "Failed to find a place to save a new {why} License".format(
-                why	= why,
-            ))
-        return provenance
+
+    save(
+        provenance,
+        extension	= extension,
+        why		= why,
+        **kwds
+    )
+    return provenance
 
 
 def verify(
@@ -2454,7 +2480,7 @@ def verify(
     signature		= None,
     confirm		= None,
     machine_id_path	= None,
-    dependencies	= True,
+    dependencies	= None,
     **constraints
 ):
     """Verify that the supplied License or LicenseSigned contains a valid signature, and that the
@@ -2468,8 +2494,15 @@ def verify(
 
     Works with either a License and signature= keyword parameter, or a LicenseSigned provenance.
 
-    Defaults to demands that any LicenseSigned dependencies are included in the resultant remaining
-    constraints, so that a sub-License can be produced.
+    Defaults to demand that any supplied LicenseSigned dependencies are included in the resultant
+    remaining constraints.  If None, by default (unlike the License{Signed}.verify), includes the
+    target LicenseSigned in the returned constraints required, so that a sub-License for the
+    verified License can be produced.
+
+    Therefore, when you have a LicenseSigned or a License + a signature, calling verify( <lic> ... )
+    will return a requirements dict ready to pass to License, along with an author and (optionally)
+    designated client Agent, with the target verified License itself in the dependencies list,
+    producing a new License which sub-licenses the just verified License.
 
     """
     return provenance.verify(
@@ -2477,8 +2510,9 @@ def verify(
         signature	= signature or provenance.signature,
         confirm		= confirm,
         machine_id_path	= machine_id_path,
-        dependencies	= dependencies,
-        **constraints )
+        dependencies	= True if dependencies is None else dependencies,
+        **constraints
+    )
 
 
 def load(
@@ -2512,7 +2546,7 @@ def load(
         yield prov._from, prov
 
 
-def load_keys(
+def load_keypairs(
     mode	= None,
     extension	= None,
     username	= None,
@@ -2741,10 +2775,10 @@ def check_nolog(
 
     """
     # Load any Keypair{Plaintext,Encrypted} available, and convert to a ed25519.Keypair,
-    # ready for signing/verification.  Retains orders of load_keys / load.
+    # ready for signing/verification.  Retains orders of load_keypairs / load.
     keypairs			= list(
         (key_path, keypair_or_error)
-        for key_path, keypair_typed, cred, keypair_or_error in load_keys(
+        for key_path, keypair_typed, cred, keypair_or_error in load_keypairs(
             username	= username,
             password	= password,
             mode	= mode,
@@ -3058,7 +3092,7 @@ def authorized(
                     state	= state,
                     keys	= len( licenses )))
                 credentials	= ( yield None, None )
-                if credentials and credentials not in credenticals_seen:
+                if credentials and credentials not in credentials_seen:
                     licenses		= dict()
                     username,password	= credentials
                     credentials_seen.add( credentials )

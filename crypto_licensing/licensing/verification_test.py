@@ -28,7 +28,7 @@ from .verification	import (
     domainkey, domainkey_service, overlap_intersect,
     into_b64, into_hex, into_str, into_str_UTC, into_JSON, into_keys, into_bytes,
     into_Timestamp, into_Duration,
-    authoring, issue, verify, load, load_keys, check, authorized,
+    authoring, issue, verify, load, load_keypairs, check, authorized,
     DKIM_pubkey, DKIMError,
 )
 from ..			import ed25519
@@ -203,19 +203,19 @@ def test_KeypairEncrypted_smoke():
 
 
 @pytest.mark.skipif( not chacha20poly1305, reason="Needs ChaCha20Poly1305" )
-def test_KeypairEncrypted_load_keys():
+def test_KeypairEncrypted_load_keypairs():
     enduser_keypair		= authoring( seed=enduser_seed, why="from enduser seed" )
     # load just the one encrypted crypto-keypair (no glob wildcard on extension)
-    (keyname,keypair_encrypted,keycred,keypair), = load_keys(
+    (keyname,keypair_encrypted,keycred,keypair), = load_keypairs(
         extension="crypto-keypair", username=username, password=password,
         extra=[os.path.dirname( __file__ )], filename=__file__, detail=True )
     assert keycred == dict( username=username, password=password )
     assert enduser_keypair == keypair_encrypted.into_keypair( **keycred ) == keypair
 
 
-def test_KeypairPlaintext_load_keys():
+def test_KeypairPlaintext_load_keypairs():
     enduser_keypair		= authoring( seed=enduser_seed, why="from enduser seed" )
-    (keyname,keypair_plaintext,keycred,keypair), = load_keys(
+    (keyname,keypair_plaintext,keycred,keypair), = load_keypairs(
         extension="crypto-keypair-plaintext",
         extra=[os.path.dirname( __file__ )], filename=__file__, detail=True )
     assert keycred == {}
@@ -495,10 +495,14 @@ def test_LicenseSigned():
     #    - Its client_pubkey will match this software installation's private key, and machine-id UUID
     # 4) Save to <application>.crypto-license in application's config path
 
-    # Lets specialize the license for a specific machine, and with a specific start time
+    # Lets specialize the license for a specific machine, and with a specific start time.  The
+    # default will include the just-verified license in the resultant dependencies (ie. same as if
+    # dependencies=[drv_prov] was provided)
     lic_host_dict		= verify(
-        drv_prov, confirm=False, machine_id_path=machine_id_path,
-        machine	= True,
+        drv_prov,
+        confirm		= False,
+        machine_id_path	= machine_id_path,
+        machine		= True,
         timespan	= Timespan( "2022-09-28 08:00:00 Canada/Mountain" ),
     )
     lic_host_dict_str = into_JSON( lic_host_dict, indent=4, default=str )

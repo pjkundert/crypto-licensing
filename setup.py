@@ -7,32 +7,6 @@ import fnmatch
 
 HERE				= os.path.dirname( os.path.abspath( __file__ ))
 
-def find_data_files( directory, *pats, **kwds ):
-    """Using glob patterns in ``package_data`` that matches a directory can result in setuptools trying
-    to install that directory as a file and the installation to fail.
-
-    This function walks over the contents of each of the supplied *paths* in *directory* and returns
-    a list of only filenames found -- relative to *directory*.
-
-    """
-    kwds.setdefault( 'skip', "*~" )
-    assert set( kwds ) == { 'skip' }
-
-    def walk( path ):
-        for root, dirs, files in os.walk( path ):
-            for filename in files:
-                yield os.path.join( root, filename )
-
-    strip = os.path.join( HERE, directory )
-    result = []
-    for pat in pats:
-        for path in glob.glob( os.path.join( strip, pat )):
-            for filename in walk( path ) if os.path.isdir( path ) else [ path ]:
-                if not fnmatch.fnmatch( filename, kwds['skip'] ):
-                    result.append( os.path.relpath( filename, strip ))
-
-    return result
-
 # Must work if setup.py is run in the source distribution context, or from
 # within the packaged distribution directory.
 __version__			= None
@@ -67,18 +41,6 @@ package_dir			= {
     "crypto_licensing/licensing/doh":	"./crypto_licensing/licensing/doh",
 }
 
-# Including data in the package is complex: https://sinoroc.gitlab.io/kb/python/package_data.html
-# 
-# Ship the static data for the crypto_licensing.licensing server, and some demo test data.  From the
-# parent of your crypto-licensing source, run:
-# 
-#     rm -f licensing.* && python3 -m crypto_licensing.licensing -vv --config cpppo/crypto/licensing/licensing_test --no-gui
-# 
-package_data			= {
-    'crypto_licensing/licensing': find_data_files(
-        'crypto_licensing/licensing', 'licensing.sql*', 'licensing_test', 'static'
-    )
-}
 
 long_description_content_type	= 'text/plain'
 long_description		= """\
@@ -112,9 +74,7 @@ setup(
     install_requires		= install_requires,
     packages			= package_dir.keys(),
     package_dir			= package_dir,
-    package_data		= package_data,
     include_package_data	= True,
-    zip_safe			= False,
     entry_points		= entry_points,
     author			= "Perry Kundert",
     author_email		= "perry@dominionrnd.com",
