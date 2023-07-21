@@ -72,9 +72,7 @@ def test_doh_api():
 
     # Now ensure multi-record (long) TXT entries are properly handled.
     recs			= doh.query(
-        'default._domainkey.justicewall.com', 'TXT' )
+        "default._domainkey.xn----7hcbr.email", 'TXT' )
     print( json.dumps( recs ) )
     assert recs[0].get( 'data' ) \
-        == "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0PMv4yXqvYlPWxCt7ZjdfR9Q4GzkGhxIEqxFTQEsPF0GxpZPr54GTiMsvmWxsrJWCb9OFo5qx48lPnHu1Y/KZcx6"\
-        "xydZiNxYdGedcRZFtMAwQAKQgo2Iq28PamZf5D8BO1+rg9tlAo2vYKrp6Cf1zTxDqHzSVl85RA7PZj1Jb/7jpqujT1SRXngrerB4iYBtx" \
-        "aPXTN/aI+cvS8kREW7tYkb4nt2fK3sb2RtCe5hxGTOdtIie/stZj/w/5ozsrtEZ6CiGQA38IaVOFsGwAvmhucy08UzbycmXKYsJiWPpSyXBXSX+O+5WaqgOYvcGT9CHBBWoFJG37Qf4KHoQqhS7IwIDAQAB;"
+        == "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA7qXVANitIc6CXteBZ/iJaTkoxZvosIu9WxGLrO2C3x5WkdzYPzTGwwosdKczTGuSZct6RPrUcwR3Rkh2p+b2hq1cn8qqHWN2XPNqZKv3VIiy2Vfahu5cUqaI3WmOIFyR57s21xi8bnKkuKfCCgKPefr9qw4bsZggaythKCosyUGFq3CG4fovTsUKGXsG5JzNm" "K61IAWLA7fnNK8SGKwoj9uVVFN1ps+mINFpqLtFvM7TweT1dlx5AShD8lJ0Bt+7EUTLp/nRRbZXbW1iKViSqiyJP4+2D0fxj8DkLOos5KKzAq9BrHYD9DsF9c8qgApO1U0iF4KsnqXMIHPbjtycTQIDAQAB;"

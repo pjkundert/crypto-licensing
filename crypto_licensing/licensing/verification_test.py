@@ -406,6 +406,30 @@ def test_LicenseSigned():
     # Obtain a signed Cpppo license for 2021-09-30 + 1y
     lic_prov = issue( lic, dominion_sigkey, confirm=confirm )
 
+    lic_prov_str = str( lic_prov )
+    print(lic_prov_str)
+    assert lic_prov.b64digest() == 'VR8vHPEOpm2d77/FM/23oUHus1NtBYiM4qSRudChyrQ='
+    assert lic_prov_str == """\
+{
+    "license":{
+        "author":{
+            "domain":"dominionrnd.com",
+            "name":"Dominion Research & Development Corp.",
+            "product":"Cpppo Test",
+            "pubkey":"qZERnjDZZTmnDNNJg90AcUJZ+LYKIWO9t0jz/AzwNsk="
+        },
+        "client":{
+            "name":"Awesome, Inc.",
+            "pubkey":"cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ="
+        },
+        "timespan":{
+            "length":"1y",
+            "start":"2021-09-30 17:22:33 UTC"
+        }
+    },
+    "signature":"tr2OcE1pT0tg7i+rotQJmFG8dIf8GhLtmBYxYDIshIRGKkmvAbCpuDgBKg8V0xUyaqh7OCCvlKRvvyqOEbD5DQ=="
+}"""
+
     # Create a signing key for Awesome, Inc.; securely hide it (or, print it for everyone to see,
     # just below! ;), and publish the base-64 encoded public key as a TXT RR at:
     #

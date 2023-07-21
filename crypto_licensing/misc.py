@@ -983,15 +983,17 @@ def config_open( name, mode=None, extra=None, skip=None, reverse=None, overwrite
                 yield f
 
 
-def deduce_name( basename=None, extension=None, filename=None, package=None ):
+def deduce_name( basename=None, extension=None, filename=None, package=None, default=None ):
     """If no basename, use filename  .../<basename>.py, or package <basename>.submodule.
 
     An absolute path 'basename' will remain unchanged.  If no extension is present, the supplied
     'extension' will be appended.
 
     """
-    assert basename or ( filename or package ), \
-        "Cannot deduce basename without either filename (__file__) or package (__package__)"
+    if not ( basename or ( filename or package )):
+        assert default, \
+            "Cannot deduce basename without either filename (__file__) or package (__package__), or default"
+        return default
     if basename is None:
         if filename:
             basename		= os.path.basename( filename )		# eg. '/a/b/c/d.py' --> 'd.py'
