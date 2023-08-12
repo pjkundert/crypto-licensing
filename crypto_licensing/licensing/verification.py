@@ -2848,7 +2848,10 @@ def check_nolog(
             ))
             continue
         key_seen.add( keypair.vk )
-
+        log.info( "Checking keypair {key_path:32} ({pubkey})...".format(
+            key_path	= os.path.basename( key_path or '(unknown)' ),
+            pubkey	= into_b64( keypair.vk ),
+        ))
         # For each unique Keypair, discover any LicenceSigned we've been issued, or can issue.
         lic_path,lic		= None,None	 # If no Licensese found, at all
         prov,reasons		= None,[]        # Why didn't any Licenses qualify?
@@ -2857,7 +2860,9 @@ def check_nolog(
             # issued by some author, with our Keypair Agent as a client (or no client spcecified),
             # and we (previously) issued and saved it -- we sub-licensed it.
             log.trace( "Evaluate {lic_path:32} / {key_path:32} w/ constrints {constraints!r}".format(
-                lic_path=os.path.basename( lic_path ), key_path=os.path.basename( key_path or '(unknown)' ), constraints=constraints ))
+                lic_path	= os.path.basename( lic_path ),
+                key_path	= os.path.basename( key_path or '(unknown)' ),
+                constraints	= constraints ))
             try:
                 lic.verify(
                     author_pubkey	= keypair.vk,
@@ -2867,9 +2872,11 @@ def check_nolog(
                     **( constraints or {} )
                 )
             except Exception as exc:
-                log.info( "Checked  {lic_path:32} / {key_path:32}: {exc}".format(
-                    lic_path=os.path.basename( lic_path ), key_path=os.path.basename( key_path or '(unknown)' ),
-                    exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
+                log.info( "Checked  {lic_path:32} / {key_path:32} ({pubkey:64}): {exc}".format(
+                    lic_path	= os.path.basename( lic_path ),
+                    key_path	= os.path.basename( key_path or '(unknown)' ),
+                    pubkey	= into_b64( keypair.vk ),
+                    exc		= ''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
                 reasons.append( str( exc ))
             else:
                 # This license passed muster w/ the constraints supplied and it was already issued
@@ -2889,9 +2896,11 @@ def check_nolog(
                     **( constraints or {} )
                 )
             except Exception as exc:
-                log.info( "Verify  {lic_path:32} / {key_path:32}: {exc}".format(
-                    lic_path=os.path.basename( lic_path ), key_path=os.path.basename( key_path or '(unknown)' ),
-                    exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
+                log.info( "Verify  {lic_path:32} / {key_path:32} ({pubkey:64}): {exc}".format(
+                    lic_path	= os.path.basename( lic_path ),
+                    key_path	= os.path.basename( key_path or '(unknown)' ),
+                    pubkey	= into_b64( keypair.vk ),
+                    exc		= ''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
                 continue
 
             # Validated this License is sub-Licensable by this Keypair Agent!  This License is
@@ -2919,9 +2928,11 @@ def check_nolog(
                     machine_id_path	= machine_id_path,
                 )
             except Exception as exc:
-                log.info( "Issuing {lic_path:32} / {key_path:32} failure: {exc}".format(
-                    lic_path=os.path.basename( lic_path ), key_path=os.path.basename( key_path or '(unknown)' ),
-                    exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
+                log.info( "Issuing {lic_path:32} / {key_path:32} ({pubkey:64}) failure: {exc}".format(
+                    lic_path	= os.path.basename( lic_path ),
+                    key_path	= os.path.basename( key_path or '(unknown)' ),
+                    pubkey	= into_b64( keypair.vk ),
+                    exc		= ''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
                 continue
             else:
                 # The License was available to be issued as one of our dependencies, and passed
@@ -2936,8 +2947,10 @@ def check_nolog(
             yield (None,None)			# Or None,None if no <Keypair>(s) at all (bad credentials?)
 
     log.debug( "Observed {keys} unique keys: {pubkeys}, {lics} licenses, finding {matches} possible Licenses".format(
-        keys = len( key_seen ), pubkeys=', '.join( into_b64( k ) for k in sorted( key_seen )),
-        lics = len( licenses ), matches = matches,
+        keys	= len( key_seen ),
+        pubkeys	= ', '.join( into_b64( k ) for k in sorted( key_seen )),
+        lics	= len( licenses ),
+        matches	= matches,
     ))
 
 

@@ -3,7 +3,13 @@
 # 
 
 # PY[23] is the target Python interpreter.  It must have pytest installed.
-PY2		?= python2
+# The python2 assumes a Nix supplied python2, and that all Python2 "pip"
+# modules have been installed locally.  To test Python2, install Nix and try:
+#
+#     make nix-install2
+#     make nix-test2
+#
+PY2		?= PIP_USER=1 PYTHONPATH=~/.local/lib/python2.7/site-packages/ python2
 PY3		?= python3
 
 TZ		?= Canada/Mountain
@@ -11,12 +17,12 @@ TZ		?= Canada/Mountain
 VERSION		= $(shell $(PY3) -c 'exec(open("crypto_licensing/version.py").read()); print( __version__ )')
 
 # To see all pytest output, uncomment --capture=no ...
-PYTESTOPTS	= --capture=no --log-cli-level=INFO  # DEBUG # 23 == DETAIL # 25 == NORMAL
+PYTESTOPTS	= --capture=no # --log-cli-level=25 # INFO  # DEBUG # 23 == DETAIL # 25 == NORMAL
 
 PY3TEST		= TZ=$(TZ) $(PY3) -m pytest $(PYTESTOPTS)
 PY2TEST		= TZ=$(TZ) $(PY2) -m pytest $(PYTESTOPTS)
 
-.PHONY: all test clean build install upload
+.PHONY: all test clean build install upload wheel FORCE
 all:			help
 
 help:
@@ -27,6 +33,10 @@ help:
 	@echo "  install		Install in /usr/local for Python3"
 	@echo "  upload			Upload new version to pypi (package maintainer only)"
 	@echo "  clean			Remove build artifacts"
+
+# nix-test, nix-install, ...
+nix-%:
+	nix-shell --pure --run "make $*"
 
 test:				test23
 test2:
@@ -198,6 +208,7 @@ crypto-licensing-server:	crypto-licensing $(CREDENTIALS)/crypto-licensing-server
             --eval "(write-file \"$@\")" \
             --kill
 
+PYS		= $(shell find crypto_licensing -name '*.py' -and -not -name '*_test.py' )
 TXT		= $(patsubst %.org,%.txt,$(wildcard crypto_licensing/licensing/static/txt/*.org))
 
 # Any build dependencies that are dynamically generated, and may need updating from time to time
@@ -208,7 +219,7 @@ deps:		$(TXT)
 #
 WHEEL		= dist/crypto_licensing-$(VERSION)-py3-none-any.whl
 
-$(WHEEL):	$(TXT)
+$(WHEEL):	$(TXT) $(PYS)
 	@$(PY3) -m build --version \
 	    || ( echo "\n*** Missing Python modules; run:\n\n        $(PY3) -m pip install --upgrade pip setuptools build\n" \
 	        && false )
@@ -239,8 +250,13 @@ install:	install23
 #   o advance __version__ number in slip32/version.py
 #   o log in to your pypi account (ie. for package maintainer only)
 
-upload: 	build
-	$(PY3) -m twine upload --repository pypi dist/*
+upload-check: FORCE
+	@$(PY3) -m twine --version \
+	    || ( echo -e "\n\n*** Missing Python modules; run:\n\n        $(PY3) -m pip install --upgrade twine\n" \
+	        && false )
+
+upload: 	upload-check wheel
+	$(PY3) -m twine upload --repository pypi dist/crypto_licensing-$(VERSION)*
 
 clean:
 	@rm -rf MANIFEST *.png build dist auto *.egg-info $(shell find . -name '*.pyc' -o -name '__pycache__' )

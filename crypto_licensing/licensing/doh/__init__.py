@@ -98,14 +98,14 @@ class DoH_Provider( Enum ):
 @memoize( maxsize=DOHMAXSIZE, maxage=DOHMAXAGE, log_at=logging.DEBUG )
 def query_cached( domain, record_type, provider=None, timeout=5 ):
     if provider in ( None, DoH_Provider.GOOGLE ):
-        #url			= 'https://dns.google/resolve'
-        url			= 'https://8.8.8.8/resolve'
+        url			= 'https://dns.google/resolve'
+        #url			= 'https://8.8.8.8/resolve'
         headers			= {
             'Content-Type':  'application/x-javascript',
         }
     elif provider == DoH_Provider.CLOUDFLARE:
-        #url			= 'https://cloudflare-dns.com/dns-query'
-        url			= 'https://1.1.1.1/dns-query'
+        url			= 'https://cloudflare-dns.com/dns-query'
+        #url			= 'https://1.1.1.1/dns-query'
         headers			= {
             'Content-Type':  'application/dns-json',
         }

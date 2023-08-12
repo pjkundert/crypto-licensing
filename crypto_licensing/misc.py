@@ -765,7 +765,11 @@ class Timestamp( datetime.datetime ):
         if tz is not self.UTC or tzdetail is not None:
             if isinstance( tzdetail, (bool, type_str_base, type(None)) ):
                 if tzdetail is None or bool( tzdetail ):
-                    result       += " " + dt.tzinfo.zone  # full zone name if tzdetail is bool/str and Truthy (default)
+                    # full zone name if tzdetail is bool/str and Truthy (default)                    
+                    try:
+                        result += " " + dt.tzinfo.key
+                    except AttributeError:
+                        result += " " + dt.tzinfo.zone
                 else:
                     # Warning: result not parse-able, b/c TZ abbreviations are wildly non-deterministic
                     result       += dt.strftime(' %Z' )   # default abbreviation for non-UTC (only if tzdetail=='')
