@@ -765,7 +765,7 @@ class Timestamp( datetime.datetime ):
         if tz is not self.UTC or tzdetail is not None:
             if isinstance( tzdetail, (bool, type_str_base, type(None)) ):
                 if tzdetail is None or bool( tzdetail ):
-                    # full zone name if tzdetail is bool/str and Truthy (default)                    
+                    # full zone name if tzdetail is bool/str and Truthy (default)
                     try:
                         result += " " + dt.tzinfo.key
                     except AttributeError:
