@@ -1,13 +1,30 @@
-with import <nixpkgs> {};
+{ pkgs ? import ./nixpkgs.nix {} }:
 
-stdenv.mkDerivation {
-  name = "python2-with-packages";
+with pkgs;
 
-  buildInputs = [
-    python3
-    python2
-    python2Packages.pip
-    python2Packages.setuptools
-    python2Packages.pytest
-	];
+let
+in
+{
+  crypto_licensing = stdenv.mkDerivation rec {
+    name = "python3-with-pytest";
+
+    buildInputs = [
+      git
+      openssh
+      python312
+      python312Packages.pytest
+    ];
+  };
+
+  crypto_licensing_py2 = stdenv.mkDerivation rec {
+    name = "python2-with-pytest";
+
+    buildInputs = [
+      git
+      openssh
+      python27
+      python27Packages.pytest
+      python27Packages.pip
+    ];
+  };
 }
