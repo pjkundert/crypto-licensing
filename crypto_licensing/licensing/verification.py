@@ -3158,7 +3158,7 @@ def authorized(
                         prod		= author.product,
                         stack		= ''.join( traceback.format_stack() if log.isEnabledFor( logging.TRACE ) else [] ),
                     ))
-                    # This License passed muster; either authored by 
+                    # This License passed muster
                     licenses[key].append( lic )
 
                 # Otherwise, we've found at least one passable license (or <key>,None or None,None
@@ -3199,7 +3199,7 @@ def authorized(
             if licenses:
                 # OK, we found at least one keypair, so we dont' need to fall thru to REGISTERING.
                 # Did we find any Licenses?
-                if not any( l for l in licenses.values() ):
+                if not any( lic for lic in licenses.values() ):
                     # Keypair(s) found, but no Licenses.  Guess we have to try to get one...
                     state	= State.REGISTERING  # continues on to LICENSING
                     continue

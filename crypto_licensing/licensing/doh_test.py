@@ -75,25 +75,24 @@ def test_doh_api():
 
     # Now ensure multi-record (long) TXT entries are properly handled.
     recs			= doh.query(
-        "default._domainkey.xn--8dbaco.email", 'TXT' )
-    recs_expected		= "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA7qXVANitIc6CXteBZ/iJaTkoxZvosIu9WxGLrO2C3x5WkdzYPzTGwwosdKczTGuSZct6RPrUcwR3Rkh2p+b2hq1cn8qqHWN2XPNqZKv3VIiy2Vfahu5cUqaI3WmOIFyR57s21xi8bnKkuKfCCgKPefr9qw4bsZggaythKCosyUGFq3CG4fovTsUKGXsG5JzNmK61IAWLA7fnNK8SGKwoj9uVVFN1ps+mINFpqLtFvM7TweT1dlx5AShD8lJ0Bt+7EUTLp/nRRbZXbW1iKViSqiyJP4+2D0fxj8DkLOos5KKzAq9BrHYD9DsF9c8qgApO1U0iF4KsnqXMIHPbjtycTQIDAQAB;"
+        "fm1.kundert.ca.dkim.fmhosted.com", 'TXT' )
+    recs_expected		="v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvjD7ONPgakX9FURb/B+TzWczm9+VCrZs5YCrGAlUdtw76lHaXVOXBk+f+ptDHg4DhaECZ5anE590QthodDXVNXeVdWh6EGpm1rvy75nj3R5scB31TZ1zYhHWMxWd9m6RsJRAYI/ANcwxAGTtgDQAYW0rBdY61F7TpXPvwr0M/AFx6jTpKP8uXiF5/twcOTRqs" "q/dlshX6/x+jjqF3TkgOjmfB9cXmzqgD9OQkmI82ukGHFAJxwMG8nTwG92x5MjRG4xjhpXlSZFjaeatvw25/67AOk7bMR5EghSvBY7K5LPwxot+nNqb43XvMk1t7sLyoO5bBOU3r4oLLWOnPE9iTQIDAQAB"  # noqa E501
     print( json.dumps( recs, indent=4 ))
     assert recs[0].get( 'data' ) == recs_expected
 
     # Via Cloudflare, too?
     recs			= doh.query(
-        "default._domainkey.xn--8dbaco.email", 'TXT', provider=doh.DoH_Provider.CLOUDFLARE )
+        "fm1.kundert.ca.dkim.fmhosted.com", 'TXT', provider=doh.DoH_Provider.CLOUDFLARE )
     print( json.dumps( recs, indent=4 ))
     assert recs[0].get( 'data' ) == recs_expected
 
     # Standard DNS resolver splits long records
     recs			= dns.resolver.query(
-        "default._domainkey.xn--8dbaco.email", 'TXT' )
+        "fm1.kundert.ca.dkim.fmhosted.com", 'TXT' )
     recs_str			= list( map( str, recs ))
     print( json.dumps( recs_str, indent=4 ))
     assert recs_str \
         == [
-            '"v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA7qXVANitIc6CXteBZ/iJaTkoxZvosIu9WxGLrO2C3x5WkdzYPzTGwwosdKczTGuSZct6RPrUcwR3Rkh2p+b2hq1cn8qqHWN2XPNqZKv3VIiy2Vfahu5cUqaI3WmOIFyR57s21xi8bnKkuKfCCgKPefr9qw4bsZggaythKCosyUGFq3CG4fovTsUKGXsG5JzNm" "K61IAWLA7fnNK8SGKwoj9uVVFN1ps+mINFpqLtFvM7TweT1dlx5AShD8lJ0Bt+7EUTLp/nRRbZXbW1iKViSqiyJP4+2D0fxj8DkLOos5KKzAq9BrHYD9DsF9c8qgApO1U0iF4KsnqXMIHPbjtycTQIDAQAB;"'
+            '"v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvjD7ONPgakX9FURb/B+TzWczm9+VCrZs5YCrGAlUdtw76lHaXVOXBk+f+ptDHg4DhaECZ5anE590QthodDXVNXeVdWh6EGpm1rvy75nj3R5scB31TZ1zYhHWMxWd9m6RsJRAYI/ANcwxAGTtgDQAYW0rBdY61F7TpXPvwr0M/AFx6jTpKP8uXiF5/twcOTRqs" "q/dlshX6/x+jjqF3TkgOjmfB9cXmzqgD9OQkmI82ukGHFAJxwMG8nTwG92x5MjRG4xjhpXlSZFjaeatvw25/67AOk7bMR5EghSvBY7K5LPwxot+nNqb43XvMk1t7sLyoO5bBOU3r4oLLWOnPE9iTQIDAQAB"'  # noqa E501
         ]
     assert ast.literal_eval( *recs_str ) == recs_expected
-    

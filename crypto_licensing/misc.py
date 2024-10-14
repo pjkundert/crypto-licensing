@@ -39,7 +39,7 @@ import traceback
 
 from functools		import wraps
 
-import pytz
+import pytz_deprecation_shim as pytz
 try:
     from tzlocal	import get_localzone
 except ImportError:

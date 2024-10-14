@@ -14,7 +14,7 @@ import logging
 import os
 import pytest
 
-import pytz
+from ..misc import pytz
 
 try:
     import chacha20poly1305
@@ -22,6 +22,7 @@ except ImportError:
     chacha20poly1305		= None
 
 from dns.exception	import DNSException
+from requests		import ConnectionError
 from .verification	import (
     License, LicenseSigned, LicenseIncompatibility, Timespan, Agent,
     KeypairPlaintext, KeypairEncrypted, machine_UUIDv4,
@@ -248,7 +249,7 @@ def test_License_base( monkeypatch ):
                 length	= "1y"
             ),
         )
-    except DNSException as exc:
+    except (DNSException, ConnectionError) as exc:
         # No DNS; OK, let the test pass anyway.
         log.warning( "No DNS; disabling crypto-licensing DKIM confirmation for test: {}".format( exc ))
         confirm		= False
@@ -384,7 +385,7 @@ def test_LicenseSigned():
             ),
             timespan	= Timespan( "2021-09-30 11:22:33 Canada/Mountain", "1y" ),
         )
-    except DNSException as exc:
+    except (DNSException, ConnectionError) as exc:
         # No DNS; OK, let the test pass anyway (and indicate to future tests to not confirm)
         log.warning( "No DNS; disabling crypto-licensing DKIM confirmation for test: {}".format( exc ))
         confirm			= False

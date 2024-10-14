@@ -6,9 +6,8 @@ dnspython
 enum34			>=1.1	; python_version < "3.4"
 future			>=1
 pathlib2		>=2.3	; python_version < "3.4"
-pytz
+pytz				; python_version < "3.0"
+pytz_deprecation_shim		; python_version >= "3.9"
 requests		>=2.20,		<3
 requests-toolbelt	>=1	; python_version > "2"
 tzlocal
-web.py			>=0.51
-wsgilog			>=0.3

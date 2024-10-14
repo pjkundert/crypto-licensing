@@ -16,8 +16,19 @@ in
     ];
   };
 
-  crypto_licensing_py2 = stdenv.mkDerivation rec {
-    name = "python2-with-pytest";
+  crypto_licensing_py313 = stdenv.mkDerivation rec {
+    name = "python313-with-pytest";
+
+    buildInputs = [
+      git
+      openssh
+      python313
+      python313Packages.pytest
+    ];
+  };
+
+  crypto_licensing_py27 = stdenv.mkDerivation rec {
+    name = "python27-with-pytest";
 
     buildInputs = [
       git
