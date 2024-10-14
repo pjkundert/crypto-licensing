@@ -30,6 +30,7 @@ extras_require			= {
     option: open( os.path.join( HERE, "requirements-{}.txt".format( option ))).readlines()
     for option in [
         'dev',		# crypto_licensing[dev]:    All modules to support development
+        'server',	# crypto_licensing[server]: Required for HTTP licensing server
     ]
 }
 

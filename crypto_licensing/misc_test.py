@@ -10,7 +10,6 @@ import datetime
 import json
 import logging
 import pytest
-import pytz
 import random
 import time
 
@@ -20,7 +19,7 @@ except ImportError:
     lru_cache			= None
 
 from .misc		import (
-    parse_datetime, parse_seconds, Timestamp, Duration, memoize, timer, gray
+    parse_datetime, parse_seconds, Timestamp, Duration, memoize, timer, gray, pytz
 )
 
 log				= logging.getLogger( "misc_test" )

@@ -10,7 +10,9 @@
 #     make nix-test2
 #
 PY2		?= PIP_USER=1 PYTHONPATH=~/.local/lib/python2.7/site-packages/ python2
+PY2_V	= $(shell $(PY2) -c "import sys; print('-'.join((next(iter(filter(None,sys.executable.split('/')))),sys.platform,sys.subversion[0].lower(),''.join(map(str,sys.version_info[:2])))))"  )
 PY3		?= python3
+PY3_V	= $(shell $(PY3) -c "import sys; print('-'.join((next(iter(filter(None,sys.executable.split('/')))),sys.platform,sys.implementation.cache_tag)))" 2>/dev/null )
 
 TZ		?= Canada/Mountain
 
@@ -25,7 +27,7 @@ GHUB_BRCH	= $(shell git rev-parse --abbrev-ref HEAD )
 
 # We'll agonizingly find the directory above this makefile's path
 VENV_DIR	= $(abspath $(dir $(abspath $(lastword $(MAKEFILE_LIST))))/.. )
-VENV_NAME	= $(GHUB_NAME)-$(VERSION)
+VENV_NAME	= $(GHUB_NAME)-$(VERSION)-$(PY3_V)
 VENV		= $(VENV_DIR)/$(VENV_NAME)
 VENV_OPTS	=
 
@@ -103,14 +105,10 @@ venv-activate:		$(VENV)/venv-activate.sh
 	@bash --init-file $< -i
 
 $(VENV):
-	@git diff --quiet || ( \
-	    echo -e "\n\n!!! Git repo branch $(GHUB_BRCH) is dirty; cannot create venv!"; false \
-	)
 	@echo; echo "*** Building $@ VirtualEnv..."
 	@rm -rf $@ && $(PY3) -m venv $(VENV_OPTS) $@ \
-	    && cd $@ && git clone $(GHUB_REPO) -b $(GHUB_BRCH) \
-	    && . ./bin/activate \
-	    && make -C $(GHUB_NAME) install-dev install
+	    && source $@/bin/activate \
+	    && make install-dev install
 
 # Activate a given VirtualEnv, and go to its routeros_ssh installation
 # o Creates a custom venv-activate.sh script in the venv, and uses it start
@@ -325,7 +323,7 @@ upload-check: FORCE
 	        && false )
 
 upload: 	upload-check wheel
-	$(PY3) -m twine upload --repository pypi dist/crypto_licensing-$(VERSION)*
+	$(PY3) -m twine upload --verbose dist/crypto_licensing-$(VERSION)*
 
 clean:
 	@rm -rf MANIFEST *.png build dist auto *.egg-info $(shell find . -name '*.pyc' -o -name '__pycache__' )

@@ -5,9 +5,10 @@ import logging
 import pytest
 import random
 
-import pytz
+from ..misc import pytz
 
 from dns.exception import DNSException
+from requests import ConnectionError
 
 from .verification import (
     License, LicenseSigned, authoring, issue, into_keys,
@@ -324,7 +325,7 @@ def test_Grant_grants():
                 length	= "1y"
             ),
         )
-    except DNSException as exc:
+    except (DNSException, ConnectionError) as exc:
         # No DNS; OK, let the test pass anyway.
         log.warning( "No DNS; disabling crypto-licensing DKIM confirmation for test: {}".format( exc ))
         confirm		= False
@@ -357,7 +358,7 @@ def test_Grant_grants():
                 length	= "1y"
             ),
         )
-    except DNSException as exc:
+    except (DNSException, ConnectionError) as exc:
         # No DNS; OK, let the test pass anyway.
         log.warning( "No DNS; disabling crypto-licensing DKIM confirmation for test: {}".format( exc ))
         confirm		= False
