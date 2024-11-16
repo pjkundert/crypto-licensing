@@ -33,6 +33,11 @@ extras_require			= {
         'server',	# crypto_licensing[server]: Required for HTTP licensing server
     ]
 }
+# Make crypto-licensing[all] install all extra (non-tests) requirements, excluding duplicates
+extras_require['all']		= list( set( sum( extras_require.values(), [] )))
+
+# Since setuptools is retiring tests_require, add it as another option (but not included in 'all')
+extras_require['tests']		= tests_require
 
 package_dir			= {
     "crypto_licensing":			"./crypto_licensing",

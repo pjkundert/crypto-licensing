@@ -31,6 +31,8 @@ VENV_NAME	= $(GHUB_NAME)-$(VERSION)-$(PY3_V)
 VENV		= $(VENV_DIR)/$(VENV_NAME)
 VENV_OPTS	=
 
+NIX_OPTS	?= # --pure
+
 # To see all pytest output, uncomment --capture=no ...
 PYTESTOPTS	= # --capture=no # --log-cli-level=25 # INFO  # DEBUG # 23 == DETAIL # 25 == NORMAL
 
@@ -57,10 +59,10 @@ help:
 #     nix-venv-activate
 #
 #     The default is the Python 3 crypto_licensing target in default.nix; choose
-# TARGET=crypto_licensing_py2 to test under Python 2 (more difficult as time goes on).
+# TARGET=py27 to test under Python 2 (more difficult as time goes on; needs old nixpkgs.nix).
 #
 nix-%:
-	nix-shell --pure --run "make $*"
+	nix-shell $(NIX_OPTS) --run "make $*"
 
 #
 # test...:	Perform Unit Tests
@@ -99,28 +101,14 @@ pylint:
 #
 .PHONY: venv venv-activate.sh venv-activate
 venv:			$(VENV)
-venv-activate.sh:	$(VENV)/venv-activate.sh
-venv-activate:		$(VENV)/venv-activate.sh
 	@echo; echo "*** Activating $< VirtualEnv for Interactive $(SHELL)"
-	@bash --init-file $< -i
+	@bash --init-file $</bin/activate -i
 
 $(VENV):
 	@echo; echo "*** Building $@ VirtualEnv..."
 	@rm -rf $@ && $(PY3) -m venv $(VENV_OPTS) $@ \
 	    && source $@/bin/activate \
-	    && make install-dev install
-
-# Activate a given VirtualEnv, and go to its routeros_ssh installation
-# o Creates a custom venv-activate.sh script in the venv, and uses it start
-#   start a sub-shell in that venv, with a CWD in the contained routeros_ssh installation
-$(VENV)/venv-activate.sh: $(VENV)
-	( \
-	    echo "PS1='[\u@\h \W)]\\$$ '";	\
-	    echo "[ ! -r ~/.git-completion.bash ] || source ~/.git-completion.bash"; \
-	    echo "[ ! -r ~/.git-prompt.sh ] || source ~/.git-prompt.sh && PS1='[\u@\h \W\$$(__git_ps1 \" (%s)\")]\\$$ '"; \
-	    echo "source $</bin/activate";	\
-	) > $@
-
+	    && make install install-tests
 
 #
 # Bootstrap a License for a product, and a sub-License issue to an end-user of that product
@@ -283,7 +271,8 @@ deps:		$(TXT)
 WHEEL		= dist/crypto_licensing-$(VERSION)-py3-none-any.whl
 
 $(WHEEL):	$(TXT) $(PYS) install-dev
-	$(PY3) -m build
+	$(PY3) -m pip install -r requirements-dev.txt
+	$(PY3) -m build .
 	@ls -last dist
 
 .PHONY: wheel build2 build23 build install2 install3 install23 install install-dev
@@ -306,11 +295,8 @@ install23:	install2 install3
 
 install:	install3
 
-install-dev:
-	$(PY3) -m pip install --upgrade -r requirements-dev.txt
-
-install-tests:
-	$(PY3) -m pip install --upgrade -r requirements-tests.txt
+install-%:  # ...-dev, -tests
+	$(PY3) -m pip install --upgrade -r requirements-$*.txt
 
 
 # Support uploading a new version of slip32 to pypi.  Must:
@@ -330,14 +316,12 @@ clean:
 
 
 # Run only tests with a prefix containing the target string, eg test-blah
-unit-%: unit3-%
 unit2-%:
 	$(PY2TEST) -k $*
 	@echo "unit2-$*: Python 2 Tests completed"
-unit3-%:
+unit-% unit3-%:
 	$(PY3TEST) -k $*
 	@echo "unit2-$*: Python 3 Tests completed"
-unit23-%: unit2-% unit3-%
 
 
 #

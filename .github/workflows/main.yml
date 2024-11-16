@@ -16,25 +16,22 @@ on:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
-        python-version: [2.7, 3.5, 3.6, 3.7, 3.8, 3.9, 3.x, pypy3]
+        python-version: ['3.9', '3.10', '3.11', '3.12', 'pypy3.9']
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install wheel
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        python -m pip install git+https://github.com/pjkundert/cpppo.git@feature-pro#egg=cpppo
-        if [ -f requirements-tests.txt ]; then pip install -r requirements-tests.txt; fi
-        pip install ed25519ll
+        python -m pip install -r requirements-dev.txt
+        python -m pip install -r requirements.txt
+        python -m pip install ed25519ll
     - name: Lint with flake8
       run: |
         make analyze

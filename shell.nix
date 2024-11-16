@@ -5,7 +5,7 @@ let
     inherit pkgs;
   };
   targeted = builtins.getEnv "TARGET";
-  selected = targeted + pkgs.lib.optionalString (targeted == "") "crypto_licensing";
+  selected = targeted + pkgs.lib.optionalString (targeted == "") "py312";
 in
 
 with pkgs;
