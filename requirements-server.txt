@@ -1,2 +1,4 @@
-web.py			>=0.51	; python_version < "3.13"
+web.py-update		>=0.74
 wsgilog			>=0.3
+legacy-cgi		>=2.6		; python_version >= "3.13"
+cpppo @ git+https://github.com/pjkundert/cpppo.git@feature-pro#egg=cpppo

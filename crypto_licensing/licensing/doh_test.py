@@ -87,7 +87,7 @@ def test_doh_api():
     assert recs[0].get( 'data' ) == recs_expected
 
     # Standard DNS resolver splits long records
-    recs			= dns.resolver.query(
+    recs			= dns.resolver.resolve(
         "20221230._domainkey.licensing.dominionrnd.com", 'TXT' )
     recs_str			= list( map( str, recs ))
     print( json.dumps( recs_str, indent=4 ))

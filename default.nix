@@ -5,6 +5,21 @@ with pkgs;
 let
 in
 {
+  pypy310 = stdenv.mkDerivation rec {
+    name = "pypy310-with-pytest";
+
+    buildInputs = [
+      bash
+      which
+      cacert
+      git
+      gnumake
+      openssh
+      pypy310
+      pypy310Packages.pytest
+    ];
+  };
+
   py313 = stdenv.mkDerivation rec {
     name = "python313-with-pytest";
 

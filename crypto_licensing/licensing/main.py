@@ -86,8 +86,8 @@ KEYFILE				= "licensing." + licensing.KEYPATTERN
 LICFILE				= "licensing." + licensing.LICPATTERN
 
 # SQL configurations are typically found in crypto_licensing/licensing, but may be customized and
-# placed in any of the Cpppo configuration file paths (eg. ~/.cpppo/, /etc/cpppo/, or the current
-# working directory)
+# placed in any of the installation's configuration file paths (eg. ~/.crypto-licensing/,
+# /etc/crypto-licensing/, or the current working directory)
 SQLFILE				= "licensing.sql"		# this + .* are loaded
 
 OURPATH				= os.path.dirname( os.path.abspath( __file__ ))
@@ -336,9 +336,14 @@ def keypairs():
         path			= None
         try:
             global config_extras
-            for path, keypair, cred in licensing.load_keys(
-                    package=__package__, username=username, password=password,
+            for path, keypair_src, cred, keypair in licensing.load_keypairs(
+                    username=username, password=password,
+                    detail=True, every=True,  # keypair may be an Exception
+                    package=__package__,                     
                     extra=config_extras, reverse=False ):
+                if isinstance( keypair, Exception ):
+                    log.warning( "Failed to load keypair from {}: {}".format( path or __package__, keypair ))
+                    continue
                 if path not in loaded:
                     yield path, keypair, cred
                     loaded.add( path )
@@ -1726,7 +1731,7 @@ def main( argv=None, **licensing_kwds ):
     """
 
     ap				= argparse.ArgumentParser(
-        description	= "A Cpppo Crypto Licensing Server",
+        description	= "A Crypto Licensing Server",
         formatter_class = argparse.RawDescriptionHelpFormatter,
         epilog		= """\
 Implements Ed25519-signed cryptographic licensing web service and API.
@@ -2090,8 +2095,11 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
     sys_stream_save		= sys.stdout, sys.stderr
     threads			= []
 
-    server			= licensing_kwds.pop( 'server', {} )
-    control			= server.pop( 'control', {} )
+    # When using threading, the licensing_kwds dict is shared with the server, so don't interfere
+    # with the structure while sharing the server.control dict.  Other application-specific kwds may
+    # be removed safely.
+    server			= licensing_kwds.get( 'server', {} )
+    control			= server.get( 'control', {} )
     try:
         # Start the control system Thread.
         ctlcnf			= licensing_kwds.pop( 'ctl', {} )
