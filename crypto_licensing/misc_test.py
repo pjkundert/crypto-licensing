@@ -34,6 +34,13 @@ def test_Duration():
     assert str( d+123456789 ) == "3y47w4d3h34m42.123s"
 
 
+def test_Timestamp_smoke( monkeypatch ):
+    monkeypatch.setattr( Timestamp, 'LOC', pytz.timezone( "Canada/Mountain" ))
+    dt			= parse_datetime( "2021-01-01 00:00:00.1 UTC" )
+    ts_dt		= Timestamp( dt )
+    assert str( ts_dt ) == "2020-12-31 17:00:00.100 Canada/Mountain"
+
+
 def test_Timestamp( monkeypatch ):
     monkeypatch.setattr( Timestamp, 'LOC', pytz.timezone( "Canada/Mountain" ))
 
