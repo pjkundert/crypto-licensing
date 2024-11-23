@@ -617,7 +617,7 @@ def txt( win, config ):
         if hasattr( include, '__call__' ):
             include		= list( include() )
 
-        # Compute time advance since last thermodynamic update
+        # Compute time advance since last update
         real			= timer()
         delta			= real - last
 
@@ -1870,7 +1870,7 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
     #     CRYPTO_LIC_USERNAME  # or --username
     #     CRYPTO_LIC_PASSWORD  # or --password (unsafe)
     #
-    # Then, find and load the Keypaar and License --product (split on spaces), joined by '-'):
+    # Then, find and load the Keypair and License --product (split on spaces), joined by '-'):
     #
     #     crypto-licensing-server.crypto-{keypair,license}
     #
@@ -1938,8 +1938,6 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
                             what   += " (leave blank to register w/ {}: {}".format(
                                 username or "(no username)", '*' * len( password or '' ) or "(no password)" )
                     log.warning( what )
-                    if not userpass_input:
-                        continue
                     # No Agent ID/License loaded; username/password may be incorrect.  If none provided,
                     # then authorization may go on to register w/ the last-entered username/password.
                     # Either username or password may be updated, if desired.  Usually, credential input
@@ -1962,11 +1960,13 @@ Performance benefits greatly from installation of (optional) ed25519ll package:
                             username or "(no username)", '*' * len( password or '' ) or "(no password)" ))
                         key,lic	= authorization.send( (username,password) )
                         continue
-                    else:
-                        log.detail( "No new credential(s) for {}: {}{}".format(
-                            username or "(no username)", '*' * len( password or '' ) or "(no password)",
-                            " (attempting to register new Agent ID)" if args.register else " (authorization failed)" ))
-                    # No Keypair (or perhaps a Keypair, but no License) found; credentials NOTupdated
+                    # No Keypair (or perhaps a Keypair, but no License) found; credentials NOT updated.  So,
+                    # the user has had the opportunity to enter a password (if either username/password was -),
+                    # but has declined.  We're done.
+                    log.detail( "No new credential(s) for {}: {}{}".format(
+                        username or "(no username)", '*' * len( password or '' ) or "(no password)",
+                        " (attempting to register new Agent ID)" if args.register else " (authorization failed)" ))
+                    break
                 else:
                     # A Keypair and License was found; remember it
                     loaded.append( (key,lic) )

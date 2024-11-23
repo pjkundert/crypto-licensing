@@ -191,7 +191,7 @@ def licensing_bench():
         client_count	= client_count,
         client_max	= client_max,
         client_kwds	= licensing_cli_kwds,
-        address_delay	= 5.0,
+        #address_delay	= 5.0,
     )
 
     if failed:
