@@ -2293,10 +2293,10 @@ def registered(
 
     Will not overwrite an existing file of the same name, if found!  If the Keypair can be loaded
     with the given credentials, it is considered as registered and returned.  Otherwise, this is
-    considered an error; you already have a Keypair regsitered with perhaps different credentials,
+    considered an error; you already have a Keypair registered with perhaps different credentials,
     and you should probably be trying to 'load_keypairs' before you register a new Agent ID...
 
-    Returns the resultant KeypairEntryped or KeypairPlaintext, w/ a ._from property == path.
+    Returns the resultant KeypairEncryped or KeypairPlaintext, w/ a ._from property == path.
 
     """
     if not why:
@@ -2373,7 +2373,7 @@ def issue(
 
     Generally, a license may be issued if it is more "specific" (less general) than any License
     dependencies.  For example, a License could specify that it can be used on *any* 1
-    installation.  The holder of the license may then issue a License specifying a the machine ID
+    installation.  The holder of the license may then issue a License specifying the machine ID
     of a certain computer.  The software then confirms successfully that the License is allocated
     to *this* computer.
 
