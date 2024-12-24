@@ -339,7 +339,7 @@ def keypairs():
             for path, keypair_src, cred, keypair in licensing.load_keypairs(
                     username=username, password=password,
                     detail=True, every=True,  # keypair may be an Exception
-                    package=__package__,                     
+                    package=__package__,
                     extra=config_extras, reverse=False ):
                 if isinstance( keypair, Exception ):
                     log.warning( "Failed to load keypair from {}: {}".format( path or __package__, keypair ))
@@ -645,19 +645,22 @@ def txt( win, config ):
                 pansel.show()
             else:
                 pansel.hide()
-
+        if selected > len( include ):
+            selected		= len( include )
         if input in ( curses.ascii.STX, curses.KEY_LEFT, 260 ):		# ^b, <--
-            selected		= ( selected - 1 ) % len( include )
+            if include:
+                selected	= ( selected - 1 ) % len( include )
         if input in ( curses.ascii.ACK, curses.KEY_RIGHT, 261 ):        # ^f, -->
-            selected		= ( selected + 1 ) % len( include )
+            if include:
+                selected	= ( selected + 1 ) % len( include )
         if input in ( curses.ascii.DLE, curses.KEY_UP, 259 ):		# ^, ^p
-            if include[selected] == 'world':				# |
+            if include and include[selected] == 'world':		# |
                 # do something to world...
                 pass
             else:
                 curses.beep()
         if input in ( curses.ascii.SO, curses.KEY_DOWN, 258 ):		# |
-            if include[selected] == 'world':				# v, ^n
+            if include and include[selected] == 'world':		# v, ^n
                 pass
             else:
                 curses.beep()

@@ -10,7 +10,6 @@ import json
 import logging
 import threading
 import os
-import sys
 import pytest
 
 from ..misc		import reprlib, urlopen
