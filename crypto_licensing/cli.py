@@ -23,7 +23,7 @@ import json
 import logging
 import os
 
-from .misc	import log_cfg, log_level, CONFIG_BASE
+from .misc	import log_cfg, log_level, CONFIG_BASE, input_secure
 from .		import licensing
 
 
@@ -77,7 +77,7 @@ cli.reverse_save	= None
 
 @click.command()
 @click.option( "--username", help="The email address (if encrypted Keypair desired))" )
-@click.option( "--password", help="The password" )
+@click.option( "--password", help="The password (- to read from input)" )
 def check( username, password ):
     """Check for Agent ID Ed25519 Key, and any associated License(s).  If neither Keypair nor
     License(s) are found, an Exception is raised.
@@ -85,16 +85,18 @@ def check( username, password ):
     If not -q, outputs JSON { <key>: [ <lic>, ...], }
 
     """
-    username		= username or os.getenv( licensing.ENVUSERNAME )
-    password		= password or os.getenv( licensing.ENVPASSWORD )
+    username			= username or os.getenv( licensing.ENVUSERNAME )
+    password			= password or os.getenv( licensing.ENVPASSWORD )
+    if password == '-':
+        password		= input_secure( 'Ed25519 password: ', secret=True )
     log.info( "Checking {why} w/ {username}: {password!r}".format(
         why		= cli.why or cli.name,
         username	= username,
         password	= '*' * len( password ) if password else password,
     ))
 
-    i			= None
-    licenses		= {}
+    i				= None
+    licenses			= {}
     for i,(keypair_raw,lic) in enumerate( licensing.check(
         basename	= cli.name,
         username	= username,
@@ -104,7 +106,10 @@ def check( username, password ):
         if not keypair_raw:
             log.warning( "No Agent ID Keypair {name}".format( name=cli.name ))
         else:
-            key		= licensing.into_hex( keypair_raw.sk ) if cli.private else licensing.into_b64( keypair_raw.vk )
+            if cli.private:
+                key		= licensing.into_hex( keypair_raw.sk )
+            else:
+                key 		= licensing.into_b64( keypair_raw.vk )
             licenses.setdefault( key, [] )
             if lic:
                 licenses[key].append( lic )
@@ -116,7 +121,7 @@ def check( username, password ):
 
 @click.command()
 @click.option( "--username", help="The email address (if encrypted Keypair desired))" )
-@click.option( "--password", help="The password" )
+@click.option( "--password", help="The password (- to read from input)" )
 @click.option( "--extension", help="A specific extension to look for" )
 @click.option( "--registering/--no-registering", default=True, help="If no Keypair found, create and register a new one" )
 @click.option( "--seed", help="A 32-byte (256-bit) Seed, in Hex (default: random)" )
@@ -131,14 +136,17 @@ def registered( username, password, extension, registering, seed ):
     default values for --username / --password.
 
     """
-    username		= username or os.getenv( licensing.ENVUSERNAME )
-    password		= password or os.getenv( licensing.ENVPASSWORD )
+    username			= username or os.getenv( licensing.ENVUSERNAME )
+    password			= password or os.getenv( licensing.ENVPASSWORD )
+    if password == '-':
+        password		= input_secure( 'Ed25519 password: ', secret=True )
     log.info( "Registering {why} w/ {username}: {password!r}".format(
         why		= cli.why or cli.name,
         username	= username,
         password	= '*' * len( password ) if password else password,
     ))
-
+    if seed and seed.lower().startswith( '0x' ):
+        seed			= seed[2:]
     keypair			= licensing.registered(
         seed		= codecs.decode( seed, 'hex_codec' ) if seed else None,
         why		= cli.why or username,
@@ -151,14 +159,17 @@ def registered( username, password, extension, registering, seed ):
         extra		= cli.extra,
     )
 
-    keypair_raw		= keypair.into_keypair(
+    keypair_raw			= keypair.into_keypair(
         username	= username,
         password	= password,
     )
 
     val				= [ keypair._from ]
     if cli.verbosity >= 0:
-        val.append( licensing.into_b64( keypair_raw.sk ) if cli.private else licensing.into_b64( keypair_raw.vk ))
+        if cli.private:
+            val.append( licensing.into_b64( keypair_raw.sk ))
+        else:
+            val.append( licensing.into_b64( keypair_raw.vk ))
     if cli.verbosity >= 1:
         assert cli.private or isinstance( keypair, licensing.KeypairEncrypted ), \
             "Cannot display un-encrypted Keypair without --private option"
@@ -187,8 +198,8 @@ def license( username, password, registering, author, domain, product, service, 
 
     Appends any specified dependencies without confirming signatures.
     """
-    username		= username or os.getenv( licensing.ENVUSERNAME )
-    password		= password or os.getenv( licensing.ENVPASSWORD )
+    username			= username or os.getenv( licensing.ENVUSERNAME )
+    password			= password or os.getenv( licensing.ENVPASSWORD )
     log.info( "Licensing {why} w/ {username}: {password!r}".format(
         why		= cli.why or cli.name,
         username	= username,

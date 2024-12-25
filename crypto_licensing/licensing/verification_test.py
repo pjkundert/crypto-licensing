@@ -202,6 +202,53 @@ def test_KeypairEncrypted_smoke():
     "vk_signature":"yaxxz6ZxCWFdtgRF1JnK+k46UYjv650f/J1yHHf9olUpLXR/KrBOrAD71cC/dAc2FVOTqzCv1S5IXhULho2QAg=="
 }"""
 
+    # Ensure we can't even /load/ an EncryptedKeypair unless the vk_signature matches the public key!
+    KeypairEncrypted(
+        ciphertext	= "d211f72ba97e9cdb68d864e362935a5170383e70ea10e2307118c6d955b814918ad7e28415e2bfe66a5b34dddf12d275",
+        salt		= "000000000000000000000000",
+        vk		= "O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik=",
+        vk_signature	= "YxRSIqHzZs5lfmWYm09wdKS8QJPSunH/Gjty/MQN5PQ3B+HkDeMtspXLWE9qbwYPGcNd1pBGaGpWAxW10l6RBg==",
+    )
+    KeypairEncrypted(
+        ciphertext	= "aea5129b033c3072be503b91957dbac0e4c672ab49bb1cc981a8955ec01dc47280effc21092403509086caa8684003c7",
+        salt		= "010101010101010101010101",
+        vk		= "cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ=",
+        vk_signature	= "yaxxz6ZxCWFdtgRF1JnK+k46UYjv650f/J1yHHf9olUpLXR/KrBOrAD71cC/dAc2FVOTqzCv1S5IXhULho2QAg==",
+    )
+    # Signature from some some other keypair:
+    with pytest.raises( ValueError ) as exc_sig:
+        KeypairEncrypted(
+            ciphertext	= "aea5129b033c3072be503b91957dbac0e4c672ab49bb1cc981a8955ec01dc47280effc21092403509086caa8684003c7",
+            salt	= "010101010101010101010101",
+            vk		= "cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ=",
+            vk_signature= "YxRSIqHzZs5lfmWYm09wdKS8QJPSunH/Gjty/MQN5PQ3B+HkDeMtspXLWE9qbwYPGcNd1pBGaGpWAxW10l6RBg==",
+        )
+    assert "Failed to verify Ed25519 pubkey cyHOei+4c5X+D/niQWvDG5olR1qi4jddcPTDJv/UfrQ= signature" in str(exc_sig)
+
+
+def test_KeypairEncrypted_readme():
+    """Ensure providing Ed25519 Keypairs to Keypair... works."""
+    username		= 'admin@awesome-inc.com'
+    password		= 'password'
+    auth_keypair	= None or authoring( seed=b'\xff' * 32 )  # don't supply, unless you have a random seed!
+    encr_keypair	= KeypairEncrypted( auth_keypair, username=username, password=password )
+    decr_keypair	= KeypairPlaintext( encr_keypair.into_keypair( username=username, password=password ))
+    assert [
+        [ "Plaintext:", "" ],
+        [ "verifying", decr_keypair['vk'] ],
+        [ "signing", decr_keypair['sk'] ],
+        [ "Encrypted:" ],
+        #[ "salt", encr_keypair['salt'] ],
+        #[ "ciphertext", encr_keypair['ciphertext'] ],
+    ] == [
+        ['Plaintext:', ''],
+        ['verifying', 'dqFZIESm5PURJlvKc6YE2QsFKdHfYCvjChmpJXZg0fU='],
+        ['signing', '//////////////////////////////////////////92oVkgRKbk9REmW8pzpgTZCwUp0d9gK+MKGakldmDR9Q=='],
+        ['Encrypted:'],
+        #['salt', 'ee7083c2c9a00a1635b56b75'],
+        #['ciphertext', '8e428db1085442c53a4e27de3dcac84c730f4fe0c22a3fd0f81791ed9891d2e6cc402a0251c92bfbefc06f2ee881abf7']
+    ]
+
 
 @pytest.mark.skipif( not chacha20poly1305, reason="Needs ChaCha20Poly1305" )
 def test_KeypairEncrypted_load_keypairs():

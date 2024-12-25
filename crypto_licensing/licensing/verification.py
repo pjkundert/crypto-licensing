@@ -1250,7 +1250,7 @@ class Grant( Serializable ):
                 if len( result ) == 1:
                     result,	= result
         elif isinstance( current, Timespan ) or isinstance( maybe_Timespan( value ), Timespan ):
-            # Either the current or new value is a Timespan.  Lets see if the value is within the provided current Timespan.
+            # Either the current or new value is a Timespan.  Let's see if the value is within the provided current Timespan.
             # If two Grants are disjoint
             current		= into_Timespan( current )      # May be None (no restriction)
             result = value	= into_Timespan( value )        # ''
@@ -2119,20 +2119,21 @@ class KeypairEncrypted( Serializable ):
             # Neither ciphertext supplied, nor plaintext signing key; must want a new Keypair
             sk			= authoring( why="No Keypair supplied to KeypairEncrypted" )
         elif sk:
-            # A signing key provided (and maybe also encrypted); lets get the private key bytes
+            # A signing key provided (and maybe also encrypted); let's get the private key bytes
             if hasattr( sk, 'sk' ):
                 # Provided with a raw ed25519.Keypair or KeypairPlaintext; extract its sk, and use any supplied vk for confirmation
-                _,edsk		= into_keys( sk )
-                sk		= into_b64( edsk )
+                vk,sk		= into_keys( sk )
             else:
                 sk		= into_bytes( sk, ('base64',) )
+            assert isinstance( sk, bytes ), \
+                f"Expected bytes sk, not: {sk!r}"
         if salt:
             self.salt		= into_bytes( salt, ('hex',) )
         else:
             # If salt not supplied, supply one -- but we obviously can't be given an encrypted seed!
             assert sk and not ciphertext, \
                 "Expected unencrypted keypair if no is salt provided"
-            self.salt		= os.urandom( 12 )
+            self.salt		= token_bytes( 12 )
         assert len( self.salt ) == 12, \
             "Expected 96-bit salt, not {!r}".format( self.salt )
         # And, if a pubkey and/or pubkey signature provided, also get their bytes
@@ -2388,7 +2389,8 @@ def issue(
         author_sigkey,
         signature	= signature,
         confirm		= confirm,
-        machine_id_path	= machine_id_path )
+        machine_id_path	= machine_id_path,
+    )
 
 
 def save(
@@ -2555,7 +2557,8 @@ def load(
             prov_ser		= f.read()
             prov_dict		= json.loads( prov_ser )
             prov		= LicenseSigned(
-                confirm=confirm, machine_id_path=machine_id_path, _from=f.name, **prov_dict )
+                confirm=confirm, machine_id_path=machine_id_path, _from=f.name, **prov_dict
+            )
         yield prov._from, prov
 
 
@@ -2900,7 +2903,8 @@ def check_nolog(
                     lic_path	= os.path.basename( lic_path ),
                     key_path	= os.path.basename( key_path or '(unknown)' ),
                     pubkey	= into_b64( keypair.vk ),
-                    exc		= ''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
+                    exc		= ''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc
+                ))
                 continue
 
             # Validated this License is sub-Licensable by this Keypair Agent!  This License is
@@ -2932,7 +2936,8 @@ def check_nolog(
                     lic_path	= os.path.basename( lic_path ),
                     key_path	= os.path.basename( key_path or '(unknown)' ),
                     pubkey	= into_b64( keypair.vk ),
-                    exc		= ''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
+                    exc		= ''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc
+                ))
                 continue
             else:
                 # The License was available to be issued as one of our dependencies, and passed
@@ -3189,7 +3194,7 @@ def authorized(
                 log.info( "{state} Checking w/ basename {base} finished w/ {keys} known Keypairs, {lics} Licenses".format(
                     state=state, base=basenow, keys=len( licenses ), lics=len( sum( licenses.values(), [] ))))
             # At the end of check... loop, no acceptable Licenses found (or still collecting).  If
-            # any more basenames available, lets try them (inheriting all ed25519.Keypairs found).
+            # any more basenames available, let's try them (inheriting all ed25519.Keypairs found).
             if basechecks:
                 log.info( "{state} Checking w/ basenames {bases} restarts w/ {keys} known Keypairs, {lics} Licenses".format(
                     state=state, bases=', '.join( basechecks ), keys=len( licenses ), lics=len( sum( licenses.values(), [] ))))
