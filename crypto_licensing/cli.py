@@ -126,14 +126,15 @@ def check( username, password ):
 @click.option( "--registering/--no-registering", default=True, help="If no Keypair found, create and register a new one" )
 @click.option( "--seed", help="A 32-byte (256-bit) Seed, in Hex (default: random)" )
 def registered( username, password, extension, registering, seed ):
-    """Determine if the specified name and credentials are registered.  Locate (or create and save, by
-    default) an Agent ID Ed25519 Keypair.
+    """Determine if an Ed25519 Keypair is registered.  Locate (or create and save, by
+    default) an Agent ID Ed25519 Keypair for the username and password.
 
     If not -q, outputs JSON "<Pubkey>" (or "<Privkey>" if --private).  If -v, the filename will also
     be output.
 
-    If {ENVUSERNAME} and/or {ENVPASSWORD} environment variables are available, they will be used as
-    default values for --username / --password.
+    If the CRYPTO_LIC_PASSWORD and/or CRYPTO_LIC_USERNAME environment variables are available, they
+    will be used as default values for --username / --password.  If '-' is supplied for password, it
+    will be securely read from standard input.
 
     """
     username			= username or os.getenv( licensing.ENVUSERNAME )
@@ -179,9 +180,9 @@ def registered( username, password, extension, registering, seed ):
 
 @click.command()
 @click.option( "--username", help="The email address (if encrypted Keypair))" )
-@click.option( "--password", help="The password" )
+@click.option( "--password", help="The password (- to read from input)" )
 @click.option( "--registering/--no-registering", default=True, help="If no Keypair found, create and register a new one" )
-@click.option( "--author", help="The author's name (eg. 'Awesome, Inc.'" )
+@click.option( "--author", help="The author's name (eg. 'Awesome, Inc.', if different than authoring keypair name)" )
 @click.option( "--domain", help="The company's DNS domain (eg. 'awesome.com'" )
 @click.option( "--product", help="The product name, (eg. 'Awesome Product')" )
 @click.option( "--service", help="The DKIM/License Grant key, (default is derived from product, eg. 'awesome-product')" )
@@ -192,7 +193,7 @@ def registered( username, password, extension, registering, seed ):
 @click.option( "--client-domain", help="The client's DNS domain (eg. 'example.com'" )
 @click.option( "--client-pubkey", help="The client's Ed25519 Agent ID" )
 def license( username, password, registering, author, domain, product, service, grant, dependency, confirm, client, client_domain, client_pubkey ):
-    """Load/create an Author ID, create/save a LicenseSigned for the specified product.
+    """Load/create an Author ID, and issue a License for a product.
 
     Won't overwrite existing keypair or license files.
 
@@ -200,6 +201,8 @@ def license( username, password, registering, author, domain, product, service, 
     """
     username			= username or os.getenv( licensing.ENVUSERNAME )
     password			= password or os.getenv( licensing.ENVPASSWORD )
+    if password == '-':
+        password		= input_secure( 'Ed25519 password: ', secret=True )
     log.info( "Licensing {why} w/ {username}: {password!r}".format(
         why		= cli.why or cli.name,
         username	= username,
@@ -229,15 +232,22 @@ def license( username, password, registering, author, domain, product, service, 
         username	= username,
         password	= password,
     )
-    key				= licensing.into_b64( keypair_raw.sk ) if cli.private else licensing.into_b64( keypair_raw.vk )
+    if cli.private:
+        key			= licensing.into_b64( keypair_raw.sk )
+    else:
+        key			= licensing.into_b64( keypair_raw.vk )
     log.detail( "Authoring Agent ID {what}: {key}, from {path}".format(
         what	= "Keypair" if cli.private else "Pubkey",
         key	= key,
         path	= keypair._from,
     ))
+
+    # Issue and save (or find) the License, named after the --product, or default to the Authoring
+    # keypair name (for example, in simple cases where the Authoring keypair is only used for a
+    # single License and is the same as the product name)
     lic				= licensing.license(
         author		= licensing.Agent(
-            name	= author,
+            name	= author or cli.name,
             domain	= domain,
             product	= product,
             service	= service or None,
@@ -251,12 +261,12 @@ def license( username, password, registering, author, domain, product, service, 
         dependencies	= dependencies,
         grant		= grant,
         why		= cli.why or product,
-        basename	= cli.name,
+        basename	= product or cli.name,
         confirm		= confirm,
         reverse_save	= cli.reverse_save,
         extra		= cli.extra,
     )
-    log.normal( "Created License {!r} in {}".format( lic, lic._from ))
+    log.normal( "Issued License {!r} in {}".format( lic, lic._from ))
     val				= [ lic._from ]
     if cli.verbosity >= 0:
         val.append( dict( lic ))

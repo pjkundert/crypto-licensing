@@ -57,7 +57,7 @@ paid in various cryptocurrencies.
   just has to have access to the Internet /once/, after the new License is installed, to verify the
   License and remember its decision.
 
-** Issuing A License: Your Authoring (Signing) Key
+** Issuing Licenses: Your Authoring (Signing) Key
 
    To begin authoring Licenses, you need to be able to sign them; you need to create and save an
    encrypted Ed25519 keypair, so you (and only you) can obtain it later to sign new Licenses.
@@ -73,6 +73,7 @@ paid in various cryptocurrencies.
 
     The raw =ed25519.Keypair= from =authoring= isn't serializable, so get a =crypto_licensing=
     =KeypairEncrypted= or =KeypairPlaintext= and save its =str( <Keypair...> )= output to a file.
+    Here's how they are related:
 
     #+LATEX: {\scriptsize
     #+BEGIN_SRC python :session py :results value
@@ -110,13 +111,62 @@ except Exception as exc:
     #+RESULTS:
     | Encrypted:  |                                                                                                  |
     | Public Key  | dqFZIESm5PURJlvKc6YE2QsFKdHfYCvjChmpJXZg0fU=                                                     |
-    | Salt        | cabf86899afec5051ffb21f1                                                                         |
-    | Ciphertext  | 6bfbbdb00e29f9c97f2111114879e1bff459b6bc7337853198062a066ec214728fe3471b5f9df979c35284345144b7f4 |
+    | Salt        | 2db3ecdc61187bee7276e3f8                                                                         |
+    | Ciphertext  | c64907ab8e72b348474948649286d43fd7f987dc69a0248edcb69780f021a2322f3da31635271f4fb2ed50a6a8d9e09f |
     | Signature   | h44cyYJvofemshmvizrN0+LVisMSTcPD1BGBVkwHVbEKbz+zHsNMjczQh91mLgwv8A6mzlbF7jQqznJOQwcxDA==         |
     | Valid?      | True                                                                                             |
     | Plaintext:  |                                                                                                  |
     | Public Key  | dqFZIESm5PURJlvKc6YE2QsFKdHfYCvjChmpJXZg0fU=                                                     |
     | Private Key | //////////////////////////////////////////92oVkgRKbk9REmW8pzpgTZCwUp0d9gK+MKGakldmDR9Q==         |
+
+    #+LATEX: }
+
+    Of course, to create a completely random =KeypairEncrypted= (using =secrets.token_bytes=), just
+    pass the default None for the =sk=.  All =Serializable= objects in =crypto-licensing= are also
+    "mapping" types with, so can be converted to a =dict= (values are serialized to their default
+    human-readable representations when accessed as keys):
+
+    #+LATEX: {\scriptsize
+    #+BEGIN_SRC python :session py :results value
+keypair_enc = cl.KeypairEncrypted( username=username, password=password )
+[[k,v] for k,v in dict(keypair_enc).items() ]
+    #+END_SRC
+
+    #+RESULTS:
+    | salt         | a9d4c932d347a9f60cf83aba                                                                         |
+    | ciphertext   | db61ab27bd0f309774ec16d6b0ab2249845b87a232c1e129a5c7eae5c8aad1e9c9e328b8e1a6674e2dc3d856963bb9ec |
+    | vk           | 08KR0bDc0iZpdeOtJ6D9+Sa9xFn/C3P7DyTR3uHzBhk=                                                     |
+    | vk_signature | DUBxzvnSbbIduwwOW49EtTS0hkrGRwS2jdqySsXsvI3yFPHM9xqFLRo9+T6C78Nh+TOQ6w4sWjH5YDuMRRheCA==         |
+
+    #+LATEX: }
+
+    accessed as an =object= attribute (values are raw when accessed as attributes) or item name:
+
+    #+LATEX: {\scriptsize
+    #+BEGIN_SRC python :session py :results value
+[['.ciphertext', keypair_enc.ciphertext.hex()],
+['[ciphertext]', keypair_enc['ciphertext']]]
+    #+END_SRC
+
+    #+RESULTS:
+    | .ciphertext  | c6983dfe1234f3500dc9506834ec675d920cb3635763920822d03b49683c11234f98f9b29a95af0427e552cec69b9c6b |
+    | [ciphertext] | c6983dfe1234f3500dc9506834ec675d920cb3635763920822d03b49683c11234f98f9b29a95af0427e552cec69b9c6b |
+
+    #+LATEX: }
+    or converted to their =JSON= format using =str=:
+
+    #+LATEX: {\scriptsize
+    #+BEGIN_SRC python :session py :results output
+print(keypair_enc)
+    #+END_SRC
+
+    #+RESULTS:
+    : {
+    :     "ciphertext":"db61ab27bd0f309774ec16d6b0ab2249845b87a232c1e129a5c7eae5c8aad1e9c9e328b8e1a6674e2dc3d856963bb9ec",
+    :     "salt":"a9d4c932d347a9f60cf83aba",
+    :     "vk":"08KR0bDc0iZpdeOtJ6D9+Sa9xFn/C3P7DyTR3uHzBhk=",
+    :     "vk_signature":"DUBxzvnSbbIduwwOW49EtTS0hkrGRwS2jdqySsXsvI3yFPHM9xqFLRo9+T6C78Nh+TOQ6w4sWjH5YDuMRRheCA=="
+    : }
 
     #+LATEX: }
 
@@ -132,7 +182,7 @@ except Exception as exc:
     #+LATEX: {\scriptsize
     #+BEGIN_SRC bash :export both
 python3 -m crypto_licensing -v --name "Awesome-Inc" registered --username admin@awesome-inc.com --password password \
-    --seed "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" 
+    --seed "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
     #+END_SRC
 
     #+RESULTS:
@@ -192,8 +242,8 @@ python3 -m crypto_licensing -v --name "Awesome-Inc" registered --username admin@
     #+END_SRC
 
     #+RESULTS:
-    : 2024-12-25 07:15:45 WARNING  licensing  load_keypa Cannot load Keypair(s) from /Users/perry/.crypto-licensing/Awesome-Inc.crypto-keypair: Failed to decrypt ChaCha20Poly1305-encrypted Keypair w/ admin@awesome-inc.com's credentials
-    : 2024-12-25 07:15:45 WARNING  doh.cli    <module>   Failed: '/Users/perry/.crypto-licensing/Awesome-Inc.crypto-keypair'
+    : 2024-12-30 16:36:00 WARNING  licensing  load_keypa Cannot load Keypair(s) from /Users/perry/.crypto-licensing/Awesome-Inc.crypto-keypair: Failed to decrypt ChaCha20Poly1305-encrypted Keypair w/ admin@awesome-inc.com's credentials
+    : 2024-12-30 16:36:00 WARNING  doh.cli    <module>   Failed: '/Users/perry/.crypto-licensing/Awesome-Inc.crypto-keypair'
 
     #+LATEX: }
 
@@ -208,7 +258,7 @@ python3 -m crypto_licensing -v --name "Awesome-Again" registered --username admi
     #+END_SRC
 
     #+RESULTS:
-    : 2024-12-25 07:13:41 WARNING  doh.cli    <module>   Failed: Failed to find a admin@awesome-inc.com Keypair; registering a new one was declined
+    : 2024-12-30 16:36:03 WARNING  doh.cli    <module>   Failed: Failed to find a admin@awesome-inc.com Keypair; registering a new one was declined
 
     #+LATEX: }
 
@@ -217,8 +267,64 @@ python3 -m crypto_licensing -v --name "Awesome-Again" registered --username admi
     re-create it if you specify the wrong password, but will instead report a failure.
 
     It is not recommended to use the =--password ...= command-line option; specify the password in
-    the =CRYPTO_LIC_PASSWORD= environment variable.  =CRYPTO_LIC_USERNAME= may be used instead of
-    =--username=.
+    the =CRYPTO_LIC_PASSWORD= environment variable, or specify =-= to read it securely from standard
+    input.  =CRYPTO_LIC_USERNAME= may be used instead of =--username=.
+
+** Creating a License: Grants
+
+   A License carries a verifiable payload from your organization that will "grant" some
+   capabilities, privileges or simply data to your client while they use your software.
+
+*** Verifiable Data
+
+    The simplest kind of license just grants some data, in such a way that your application can load
+    the License, verify that it was issued by your organization, and remember for the future so it
+    doesn't have to re-verify the License and associated data.
+
+    For example, you might need to issue an API or license key for some component of your software,
+    and you just want to make sure it's valid data issued by your organization.  Let's create a License
+    using our =Awesome-Inc= authoring keypair, granting a Python =pysimplegui= Distribution key:
+
+    #+LATEX: {\scriptsize
+    #+BEGIN_SRC bash :export both
+python3 -m crypto_licensing -v --name "Awesome-Inc" \
+    --why "AwesomePyApp: PySimpleGUI Distribution Key" \
+    license \
+    --username admin@awesome-inc.com --password password \
+    --product "AwesomePyApp" \
+    --domain "awesome-py-app.dominionrnd.com"  --no-confirm \
+    --grant '{ "PySimpleGUI": { "License": "ebyzJLMp...20c3" }}' 2>&1
+    #+END_SRC
+
+    #+RESULTS:
+    #+begin_example
+    2024-12-30 16:37:38 NORMAL   licensing  registered Found AwesomePyApp: PySimpleGUI Distribution Key Keypair at /Users/perry/.crypto-licensing/Awesome-Inc.crypto-keypair: dqFZIESm5PURJlvKc6YE2QsFKdHfYCvjChmpJXZg0fU=
+    2024-12-30 16:37:38 DETAIL   crypto_lic license    Authoring Agent ID Pubkey: dqFZIESm5PURJlvKc6YE2QsFKdHfYCvjChmpJXZg0fU=, from /Users/perry/.crypto-licensing/Awesome-Inc.crypto-keypair
+    2024-12-30 16:37:38 NORMAL   crypto_lic license    Issued License <LicenseSigned (from '/Users/perry/.crypto-licensing/AwesomePyApp.crypto-license')> in /Users/perry/.crypto-licensing/AwesomePyApp.crypto-license
+    [
+	"/Users/perry/.crypto-licensing/AwesomePyApp.crypto-license",
+	{
+	    "license":{
+		"author":{
+		    "domain":"awesome-py-app.dominionrnd.com",
+		    "name":"Awesome-Inc",
+		    "product":"AwesomePyApp",
+		    "pubkey":"dqFZIESm5PURJlvKc6YE2QsFKdHfYCvjChmpJXZg0fU="
+		},
+		"dependencies":[],
+		"grant":{
+		    "PySimpleGUI":{
+			"License":"ebyzJLMp...20c3"
+		    }
+		}
+	    },
+	    "signature":"tKnpz97zmfg7IlrWOjcO+Row3ZAv/gQRHIAj8I9r8vhNYMygbYz5asCUr5tPBlXmf2QPPYpudeBlnOBLp2hUAg=="
+	}
+    ]
+    #+end_example
+
+    #+LATEX: }
+
 
 *** =issue=: Signing a License
 

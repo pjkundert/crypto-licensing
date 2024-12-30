@@ -43,7 +43,7 @@ from .defaults		import (
 from ..misc		import (
     type_str_base, type_num_base, urlencode,
     parse_datetime, parse_seconds, Timestamp, Duration,
-    config_open_deduced,
+    config_open_deduced, ConfigFoundError,
     token_bytes, is_mapping, is_listlike,
 )
 
@@ -77,6 +77,11 @@ class LicenseNotFound( LicensingError ):
 
 class LicenseIncompatibility( LicensingError ):
     """Something is wrong with the License, or supporting infrastructure."""
+    pass
+
+
+class LicenseDuplicated( LicenseIncompatibility ):
+    """A duplicate but incompatible License was found."""
     pass
 
 
@@ -377,13 +382,13 @@ def maybe_Timespan( timespan ):
     return timespan
 
 
-def into_Grant( grant ):
+def into_Grant( grant, _from=None ):
     """Convert to a Grant, retaining None.  An empty Grant won't be included in serialize."""
     if grant is not None:
         if not isinstance( grant, Grant ):
             if isinstance( grant, type_str_base ):
                 grant		= json.loads( grant )
-            grant		= Grant( **dict( grant ))
+            grant		= Grant( _from=_from, **dict( grant ))
     return grant
 
 
@@ -528,8 +533,9 @@ class Serializable( object ):
                             exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
                         raise
             for key in vars_seq:
-                if key[0] == '_':  # ignore hidden _... vars, eg. _from.
-                    continue
+                if key[0] == '_':  # ignore hidden _... vars, eg. _from.  Except under TRACe
+                    if not log.isEnabledFor( logging.TRACE ):
+                        continue
                 yield key, getattr( self, key )
 
     def __copy__( self ):
@@ -611,8 +617,8 @@ class Serializable( object ):
             return default
 
     def __setitem__( self, key, value ):
-        if key.startswith( '_' ) or key in set( dir( self )) - set( self.keys( every=True )):
-            raise IndexError( "{} is not a valid Grant keys".format( key ))  # Hidden _... or predefined
+        if key in set( dir( self )) - set( self.keys( every=True )):
+            raise IndexError( "{} is not a valid {} keys".format( key, self.__class__.__name__ ))  # Hidden _... or predefined
         setattr( self, key, value )
 
     set				= __setitem__
@@ -626,7 +632,11 @@ class Serializable( object ):
         return self.JSON()
 
     def __repr__( self ):
-        return '<' + self.__class__.__name__ + ( " (from {})".format( repr( self._from )) if self._from else "" ) + '>'
+        return '<' + self.__class__.__name__ + (
+            " (from {})".format( repr( self._from ))
+            if self._from or log.isEnabledFor( logging.DEBUG )
+            else ""
+        ) + '>'
 
     def JSON( self, indent=4, default=None, prefix=None ):
         """Return the default readable JSON representation of the present object."""
@@ -883,11 +893,11 @@ class Agent( Serializable ):
         self.service		= service  # Likely deduced, w/ domainkey_service( product )
         self.keypair		= keypair and KeypairPlaintext( keypair )
         self.pubkey,_		= into_keys( pubkey or self.keypair )
+        super( Agent, self ).__init__( **kwds )
 
         # Now pubkey_query has all the details it requires to do a DKIM lookup, if necessary
         if confirm is not False:
             self.pubkey_confirm( confirm=confirm )
-        super( Agent, self ).__init__( **kwds )
 
     @property
     def servicekey( self ):
@@ -1020,9 +1030,10 @@ class Timespan( Serializable ):
         """
         self.start		= into_Timestamp( start )
         self.length		= into_Duration( length )
+        super( Timespan, self ).__init__( **kwds )
+
         assert self.length is None or self.start is not None, \
             "Invalid Timespan; must have a start time if length specified"
-        super( Timespan, self ).__init__( **kwds )
 
     def __contains__( self, other ):
         """True iff we fully encompasses the other Timespan.
@@ -1174,6 +1185,7 @@ class Grant( Serializable ):
             )
         self.__dict__.update( option )
         super( Grant, self ).__init__( _from=_from )
+        log.debug( "Created {!r}: {}".format( self, self ))
 
     def empty( self ):
         """Detects if empty, and avoid serialization if so.  This allows someone to accidentally
@@ -1250,8 +1262,8 @@ class Grant( Serializable ):
                 if len( result ) == 1:
                     result,	= result
         elif isinstance( current, Timespan ) or isinstance( maybe_Timespan( value ), Timespan ):
-            # Either the current or new value is a Timespan.  Let's see if the value is within the provided current Timespan.
-            # If two Grants are disjoint
+            # Either the current or new value is a Timespan.  Let's see if the value is within the
+            # provided current Timespan.  If two Grants are disjoint, raises exception
             current		= into_Timespan( current )      # May be None (no restriction)
             result = value	= into_Timespan( value )        # ''
             if style is Grant.Merging.REFINING:
@@ -1279,6 +1291,8 @@ class Grant( Serializable ):
         capabilities granted by the current Grant.  If each granted capability (key) is a valid
         refinement, then the current Grant assumes the refined value.
 
+        An existing Grant with its heritage will be retained; the refinement applied
+
         If a completely new group is being added -- a previously unknown Grant -- then, we will also
         copy the source Grant._from heritage.  In the case of Grants from Licenses, this will be the
         authoring Agent from the License that originally authored the Grant.
@@ -1295,18 +1309,23 @@ class Grant( Serializable ):
                     style=style, group=group, name=rhs_group_grant.__class__.__name__,
                     extra="; {} in {}".format( repr( rhs_group_grant ), repr( rhs_grant )) if log.isEnabledFor( logging.DEBUG ) else "" )
             if group in self.keys( every=True ):
+                # An existing group key; only if no heritage is known do we assume the authorship of
+                # the supplied refining Grant.
                 lhs_group_grant	= self[group]
                 if lhs_group_grant._from != rhs_group_grant._from:
                     if style is Grant.Merging.COMBINED:
                         # When License.grants() are COMBINED, the Grants must come from the same author
                         raise LicenseIncompatibility( "License Grant group {group}'s author {lhs_auth!r} incompatible with {rhs_auth!r}".format(
                             group=group, lhs_auth=lhs_group_grant._from, rhs_auth=rhs_group_grant._from ))
-                    # But, when REFINING (sub-licensing a subset of our Granted capabilities), our
-                    # Grant assumes the authorship of the original License; we're simply passing on
-                    # a valid subset of what we have been granted.
-                    lhs_group_grant._from = rhs_group_grant._from
+                    if lhs_group_grant._from is None:
+                        log.info( "Inherits {} {!r}: {} author to that of {!r}: {}".format(
+                            group, lhs_group_grant, lhs_group_grant, rhs_group_grant, rhs_group_grant ))
+                        lhs_group_grant._from = rhs_group_grant._from
             else:
+                # A completely new group key; assume the heritage of the supplied Grant
                 lhs_group_grant = self[group] = Grant( _from=rhs_group_grant._from )
+                log.info( "Creating {} {!r}: {} author w/ that of {!r}: {}".format(
+                    group, lhs_group_grant, lhs_group_grant, rhs_group_grant, rhs_group_grant ))
             for key,value in rhs_group_grant.items():
                 update		= self.merge( group=group, key=key, value=value, style=style )
                 if update is not None:
@@ -1315,16 +1334,54 @@ class Grant( Serializable ):
     def __iand__( self, rhs_grant ):
         self._integrate( rhs_grant, style=Grant.Merging.REFINING )
         log.debug( "After Grant &= {}:\n{}".format(
-            ', '.join( "{} = {}".format( key, repr( rhs )) for key,rhs in rhs_grant.items() ),
+            ', '.join( "{} = {} = {}".format( key, repr( rhs ), rhs_grant[key] ) for key,rhs in rhs_grant.items() ),
             '\n'.join( "{} = {} = {}".format( key, repr( lhs ), self[key] ) for key,lhs in self.items() )))
         return self
 
     def __ior__( self, rhs_grant ):
         self._integrate( rhs_grant, style=Grant.Merging.COMBINED )
         log.debug( "After Grant |= {}:\n{}".format(
-            ', '.join( "{} = {}".format( key, repr( rhs )) for key,rhs in rhs_grant.items() ),
+            ', '.join( "{} = {} = {}".format( key, repr( rhs ), rhs_grant[key] ) for key,rhs in rhs_grant.items() ),
             '\n'.join( "{} = {} = {}".format( key, repr( lhs ), self[key] ) for key,lhs in self.items() )))
         return self
+
+    def __le__( self, rhs_grant ):
+        """Detect if this Grant is a subset of another.  If it has additional keys, or has a Grant
+        that couldn't be satisfied by our Grant, then we are considered "not a subset".
+
+        We can only compare Grants consisting of group:Grant pairs using this operator; A Grant may
+        contain either group: Grant pairs, or key: value pairs.  Ensure Grant's _from are compatible
+        and values are a subset, then compare each group:Grant's key:value pairs for compatibilityf
+
+        For key/value pairs, use merge( ..., REFINING), which does not alter the Grant, but ensures
+        that the target Grant's key/value are a superset of the given Grant's key/value; in effect,
+        that this Grant is a subset of the target Grant.
+
+        """
+        try:
+            if miss_groups     := set( self.keys( every=True )) - set( rhs_grant.keys( every=True )):
+                raise LicenseDisjoint( "Grant group(s) {} do not overlap".format( ', '.join( miss_groups )))
+            if self._from != rhs_grant._from:
+                raise LicenseIncompatibility( "License Grant {lhs_auth!r} incompatible with {rhs_auth!r}".format(
+                    lhs_auth=self._from, rhs_auth=rhs_grant._from ))
+            for group,lhs_group_grant in self.items():
+                rhs_group_grant	= rhs_grant[group]
+                assert isinstance( lhs_group_grant, Grant ) and isinstance( rhs_group_grant, Grant ), \
+                    "Only {group} Grants may be compared for subset, not {lhs_type} vs {rhs_type}".format(
+                        group=group, lhs_type=type(lhs_group_grant), rhs_type=type(rhs_grant) )
+                if miss_keys   := set( lhs_group_grant.keys( every=True )) - set( rhs_group_grant.keys( every=True )):
+                    raise LicenseDisjoint( "Grant {} keys {} do not overlap".format(
+                        group, ', '.join( miss_keys )))
+                for key,value in lhs_group_grant.items():
+                    # Verify RHS value is a subset of LHS value, or raise LicenseIncompatibility
+                    subset	= rhs_grant.merge( group=group, key=key, value=value, style=Grant.Merging.REFINING )
+                    log.info( "Grant group {}'s key {} subset {} <= {} ==> {}".format(
+                              group, key, value, lhs_group_grant[key], subset ))
+        except LicenseIncompatibility as exc:
+            log.info( "Grant {} is not a subset of {}: {}".format( self, rhs_grant, exc ))
+            return False
+        log.debug( "Grant {} is a subset of {}".format( self, rhs_grant ))
+        return True
 
 
 class License( Serializable ):
@@ -1530,7 +1587,7 @@ class License( Serializable ):
         # or by someone trying to forge a Grant of our product's features).  So, any new ones
         # (unique to our self.grant) must be designated as Grant._from this authoring Agent.  The
         # convention is to use our author Agent.service (or domainkey_service( Agent.product ) as
-        # our Grant group name; if not defined, provide an empty Grant w/ ._from
+        # our Grant group name; if not defined, provide an empty Grant w/ ._from = author
         our_grant		= Grant() if self.grant is None else self.grant
         service			= self.author.service or domainkey_service( self.author.product )
         if service and service not in our_grant.keys( every=True ):
@@ -1545,7 +1602,7 @@ class License( Serializable ):
             if isinstance( our_grant[orig], Grant ):
                 our_grant[orig]._from	= self.author
             else:
-                our_grant[orig]	= Grant( _from = self.author, **our_grant[orig] )
+                our_grant[orig]	= Grant( _from = self.author, **( our_grant[orig] or {} ))
         log.info( "License for {auth}'s {prod!r} originating Grant groups {originating}".format(
             auth	= self.author.name,
             prod	= self.author.product,
@@ -1610,10 +1667,10 @@ class License( Serializable ):
                 else LicenseSigned( confirm=confirm, machine_id_path=machine_id_path, **dict( prov ))
                 for prov in dependencies
             )
+        super( License, self ).__init__( **kwds )
 
         # Only allow the construction of valid Licenses
         self.verify( confirm=confirm, machine_id_path=machine_id_path )
-        super( License, self ).__init__( **kwds )
 
     def overlap( self, *others ):
         """Compute the overlapping start/length that is within the bounds of this and other license(s).
@@ -1854,6 +1911,26 @@ class License( Serializable ):
 
         return constraints
 
+    def __le__( self, rhs ):
+        """Incompatible dependencies and grants is always considered "not a subset" of another
+        License.  However, if a License Grants at least the same capabilities, from dependencies
+        that are found to be compatible, then it is considered "a subset".
+
+        """
+        grants		= self.grants()
+        grants_rhs	= rhs.grants()
+        if grants <= grants_rhs:
+            # Grants compatible; all License dependencies must be represented in the other License' dependencies.
+            return all(
+                any(
+                    lic <= rhs_lic
+                    for rhs_lic in rhs.dependendencies or []
+                )
+                for lic in self.dependencies or []
+            )
+        log.warning( "This License grants: {} doesn't match rhs: {}".format( grants, grants_rhs ))
+        return False
+
 
 class LicenseSigned( Serializable ):
     """A License and its Ed25519 Signature provenance.  Only a LicenseSigned (and confirmation of
@@ -1951,6 +2028,15 @@ class LicenseSigned( Serializable ):
         >>> print( json.dumps( verify( provenance_load, confirm=False, dependencies=False ), default=str ))
         {}
 
+    Comparing License
+    -----------------
+
+    A License is considered a subset or less-than another license if:
+
+    - it is not signed by the same author
+    - it doesn't contain at least the same dependencies
+    - it doesn't grant at least the same grants
+
     """
 
     __slots__			= ('license', 'signature')
@@ -1991,13 +2077,13 @@ class LicenseSigned( Serializable ):
             # Could be a hex-encoded signature on deserialization, or a 64-byte signature.  If both
             # signature and author_sigkey, we'll just be confirming the supplied signature, below.
             self.signature	= into_bytes( signature, ('base64',) )
+        super( LicenseSigned, self ).__init__( **kwds )
 
         self.verify(
             author_pubkey	= author_sigkey,
             confirm		= confirm,
             machine_id_path	= machine_id_path,
         )
-        super( LicenseSigned, self ).__init__( **kwds )
 
     def grants( self, once=None ):
         if once is None:
@@ -2022,6 +2108,19 @@ class LicenseSigned( Serializable ):
             **constraints
         )
 
+    def __le__( self, rhs ):
+        """Incompatible author provenance is always considered "not a subet".  A LicenseSigned
+        issued by different authors cannot be considered equivalent, regardless of other License
+        similarities.
+
+        """
+        if self.license.author.pubkey != rhs.license.author.pubkey:
+            log.warning( "This License author: {} doesn't match rhs: {}".format(
+                self.license.author.pubkey, rhs.license.author.pubkey  ))
+            return False
+        # OK, the signing author is compatible.  What about the rest of the License?
+        return self.license <= rhs.license
+
 
 class KeypairPlaintext( Serializable ):
     """De/serialize the plaintext Ed25519 private and public key material.  Order of arguments is
@@ -2041,7 +2140,7 @@ class KeypairPlaintext( Serializable ):
 
         """
         if not sk and not vk:
-            sk			= authoring( why="No Keypair supplied to KeypairPlaintext" )
+            vk,sk		= authoring( why="No Keypair supplied to KeypairPlaintext" )
         if hasattr( sk, 'sk' ):
             # Provided with a raw ed25519.Keypair or KeypairPlaintext; use its sk; retain any supplied vk for confirmation
             _,self.sk		= into_keys( sk )
@@ -2117,7 +2216,7 @@ class KeypairEncrypted( Serializable ):
             raise TypeError( "Insufficient arguments to create an Encrypted Keypair; either ciphertext/salt or password/username required" )
         if not has_encrypted and not sk:
             # Neither ciphertext supplied, nor plaintext signing key; must want a new Keypair
-            sk			= authoring( why="No Keypair supplied to KeypairEncrypted" )
+            vk,sk		= authoring( why="No Keypair supplied to KeypairEncrypted" )
         elif sk:
             # A signing key provided (and maybe also encrypted); let's get the private key bytes
             if hasattr( sk, 'sk' ):
@@ -2194,10 +2293,10 @@ class KeypairEncrypted( Serializable ):
         # vk/vk_signature, and these will remain None.  Thus, only iff no username/password.
         self.vk			= vk
         self.vk_signature	= vk_signature
+        super( KeypairEncrypted, self ).__init__( **kwds )
+
         assert vk_signature or not has_credentials, \
             "No pubkey signature deduced, but credentials are available: {}".format( self )
-
-        super( KeypairEncrypted, self ).__init__( **kwds )
 
     def key( self, username, password ):
         # The username, which is often an email address, should be case-insensitive.
@@ -2259,8 +2358,8 @@ def save_keypair(
     for f in config_open_deduced(
         mode		= "wb",
         extension	= extension or KEYEXTENSION,  # But uses default extension on creation
-        reverse		= reverse_save,
         skip		= False,  # For writing/creating, of course we don't want to "skip" anything...
+        reverse		= reverse_save,
         **kwds
     ):
         try:
@@ -2407,7 +2506,7 @@ def save(
         why			= "the"
     for f in config_open_deduced(
         mode		= "wb",
-        extension	= extension or LICEXTENSION,
+        extension	= extension or LICEXTENSION,  # But uses default extension on creation
         skip		= False,  # For writing/creating, of course we don't want to "skip" anything...
         reverse		= reverse_save,
         **kwds
@@ -2461,7 +2560,7 @@ def license(
             timespan		= timespan,
             grant		= grant,
             machine_id_path	= machine_id_path,
-            confirm		= confirm
+            confirm		= confirm,
         )
         provenance		= issue(
             lic,
@@ -2470,20 +2569,35 @@ def license(
             machine_id_path	= machine_id_path
         )
     except Exception as exc:
-        log.detail( "Creating {why} License failed: {exc}".format(
+        log.warning( "Creating {why} License failed: {exc}".format(
             why		= why,
-            exc		= exc,
+            exc		= ''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.DEBUG ) else exc,
         ))
         raise NotLicensed( "Failed to save a new License: {exc}".format( exc=exc ))
     else:
-        log.detail( "Created License provenance {}".format( provenance ))
+        log.info( "Created License provenance {}".format( provenance ))
 
-    save(
-        provenance,
-        extension	= extension,
-        why		= why,
-        **kwds
-    )
+    # If we have already saved an identical license
+    try:
+        save(
+            provenance,
+            extension	= extension,
+            why		= why,
+            **kwds
+        )
+    except ConfigFoundError as existing_exc:
+        # Deja Vu?  If the proposed License is a subset of the one found, return it instead.
+        path,*_			= existing_exc.args
+        with open( path, "rb" ) as f:
+            existing_ser	= f.read()
+            existing_dict	= json.loads( existing_ser )
+            existing		= LicenseSigned(
+                confirm=confirm, machine_id_path=machine_id_path, _from=f.name, **existing_dict
+            )
+        if not ( provenance <= existing ):
+            raise LicenseDuplicated( existing, provenance ) from existing_exc
+        log.info( "Existing License provenance {} is compatible".format( existing ))
+        provenance		= existing
     return provenance
 
 

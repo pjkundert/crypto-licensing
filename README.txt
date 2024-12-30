@@ -19,16 +19,18 @@ Table of Contents
 ─────────────────
 
 1. Software Licensing Using Ed25519 Signatures
-.. 1. Issuing A License: Your Authoring (Signing) Key
+.. 1. Issuing Licenses: Your Authoring (Signing) Key
 ..... 1. `crypto_licensing.authoring': Create an Authoring Keypair in Python
 ..... 2. `crypto_licensing registered': Load or Create an Authoring Keypair
-..... 3. `issue': Signing a License
-..... 4. `verify': Confirm License (and sub-License) Validity
-.. 2. Using Licenses
+.. 2. Creating a License: Grants
+..... 1. Verifiable Data
+..... 2. `issue': Signing a License
+..... 3. `verify': Confirm License (and sub-License) Validity
+.. 3. Using Licenses
 ..... 1. `load_keys': Find all Ed25519 Signing Keys
 ..... 2. `load': Find all Licenses
 ..... 3. `check': Find all Keys and Valid Licenses
-.. 3. Running A `crypto_licensing.licensing' Server
+.. 4. Running A `crypto_licensing.licensing' Server
 2. Payment with Cryptocurrencies
 3. Issuance via Web API
 
@@ -60,8 +62,8 @@ Table of Contents
   verify the License and remember its decision.
 
 
-1.1 Issuing A License: Your Authoring (Signing) Key
-───────────────────────────────────────────────────
+1.1 Issuing Licenses: Your Authoring (Signing) Key
+──────────────────────────────────────────────────
 
   To begin authoring Licenses, you need to be able to sign them; you
   need to create and save an encrypted Ed25519 keypair, so you (and only
@@ -82,7 +84,8 @@ Table of Contents
 
   The raw `ed25519.Keypair' from `authoring' isn't serializable, so get
   a `crypto_licensing' `KeypairEncrypted' or `KeypairPlaintext' and save
-  its `str( <Keypair...> )' output to a file.
+  its `str( <Keypair...> )' output to a file.  Here's how they are
+  related:
 
   ┌────
   │ import crypto_licensing as cl
@@ -119,14 +122,60 @@ Table of Contents
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    Encrypted:                                                                                                    
    Public Key   dqFZIESm5PURJlvKc6YE2QsFKdHfYCvjChmpJXZg0fU=                                                     
-   Salt         0bb88fb9dff5594ea1956968                                                                         
-   Ciphertext   7eb481dcdecc1c7b48048321d7e359c72ab327c0374abae044329d87f513528d536caf711fa13ee5e3d3394b3e2a0654 
+   Salt         85f6c6c07df3d74fecd82600                                                                         
+   Ciphertext   7ed47bd73f8e261b7398f059bd76319915ac7b8923a2568b092f8b1e5277a7a55df6fea031f1bd3cf84d860956a095ef 
    Signature    h44cyYJvofemshmvizrN0+LVisMSTcPD1BGBVkwHVbEKbz+zHsNMjczQh91mLgwv8A6mzlbF7jQqznJOQwcxDA==         
    Valid?       True                                                                                             
    Plaintext:                                                                                                    
    Public Key   dqFZIESm5PURJlvKc6YE2QsFKdHfYCvjChmpJXZg0fU=                                                     
    Private Key  //////////////////////////////////////////92oVkgRKbk9REmW8pzpgTZCwUp0d9gK+MKGakldmDR9Q==         
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Of course, to create a completely random `KeypairEncrypted' (using
+  `secrets.token_bytes'), just pass the default None for the `sk'.  All
+  `Serializable' objects in `crypto-licensing' are also "mapping" types
+  with, so can be converted to a `dict' (values are serialized to their
+  default human-readable representations when accessed as keys):
+
+  ┌────
+  │ keypair_enc = cl.KeypairEncrypted( username=username, password=password )
+  │ [[k,v] for k,v in dict(keypair_enc).items() ]
+  └────
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   salt          26df4b08e5002ed3dbad7918                                                                         
+   ciphertext    33a6d24f2b9472af4831abe4de180460582b9d97b50e89a632fd754d9ab6b47d1361dcf99d674b1868ae29f86f3128bf 
+   vk            V9fMRtLBkcd43dfEma7agr83jGu+AJXRi9ee8WMlcK8=                                                     
+   vk_signature  tK05r3x+OqYThBlRU1XnEDyxeabtrU8SRGdgnCbywLJysdAUH2+WIGuvr36ASEF6pAiB2/VLpIjdtFOIgo2xAg==         
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  accessed as an `object' attribute (values are raw when accessed as
+  attributes) or item name:
+
+  ┌────
+  │ [['.ciphertext', keypair_enc.ciphertext.hex()], 
+  │ ['[ciphertext]', keypair_enc['ciphertext']]]
+  └────
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   .ciphertext   33a6d24f2b9472af4831abe4de180460582b9d97b50e89a632fd754d9ab6b47d1361dcf99d674b1868ae29f86f3128bf 
+   [ciphertext]  33a6d24f2b9472af4831abe4de180460582b9d97b50e89a632fd754d9ab6b47d1361dcf99d674b1868ae29f86f3128bf 
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  or converted to their `JSON' format using `str':
+
+  ┌────
+  │ print(keypair_enc)
+  └────
+
+  ┌────
+  │ {
+  │     "ciphertext":"33a6d24f2b9472af4831abe4de180460582b9d97b50e89a632fd754d9ab6b47d1361dcf99d674b1868ae29f86f3128bf",
+  │     "salt":"26df4b08e5002ed3dbad7918",
+  │     "vk":"V9fMRtLBkcd43dfEma7agr83jGu+AJXRi9ee8WMlcK8=",
+  │     "vk_signature":"tK05r3x+OqYThBlRU1XnEDyxeabtrU8SRGdgnCbywLJysdAUH2+WIGuvr36ASEF6pAiB2/VLpIjdtFOIgo2xAg=="
+  │ }
+  └────
 
 
 1.1.2 `crypto_licensing registered': Load or Create an Authoring Keypair
@@ -196,8 +245,8 @@ Table of Contents
   └────
 
   ┌────
-  │ 2024-12-25 08:27:15 WARNING  licensing  load_keypa Cannot load Keypair(s) from /Users/perry/.crypto-licensing/Awesome-Inc.crypto-keypair: Failed to decrypt ChaCha20Poly1305-encrypted Keypair w/ admin@awesome-inc.com's credentials
-  │ 2024-12-25 08:27:15 WARNING  doh.cli    <module>   Failed: '/Users/perry/.crypto-licensing/Awesome-Inc.crypto-keypair'
+  │ 2024-12-30 16:40:56 WARNING  licensing  load_keypa Cannot load Keypair(s) from /Users/perry/.crypto-licensing/Awesome-Inc.crypto-keypair: Failed to decrypt ChaCha20Poly1305-encrypted Keypair w/ admin@awesome-inc.com's credentials
+  │ 2024-12-30 16:40:56 WARNING  doh.cli    <module>   Failed: '/Users/perry/.crypto-licensing/Awesome-Inc.crypto-keypair'
   └────
 
 
@@ -212,7 +261,7 @@ Table of Contents
   └────
 
   ┌────
-  │ 2024-12-25 08:27:15 WARNING  doh.cli    <module>   Failed: Failed to find a admin@awesome-inc.com Keypair; registering a new one was declined
+  │ 2024-12-30 16:40:56 WARNING  doh.cli    <module>   Failed: Failed to find a admin@awesome-inc.com Keypair; registering a new one was declined
   └────
 
 
@@ -223,10 +272,70 @@ Table of Contents
 
   It is not recommended to use the `--password ...' command-line option;
   specify the password in the `CRYPTO_LIC_PASSWORD' environment
-  variable.  `CRYPTO_LIC_USERNAME' may be used instead of `--username'.
+  variable, or specify `-' to read it securely from standard input.
+  `CRYPTO_LIC_USERNAME' may be used instead of `--username'.
 
 
-1.1.3 `issue': Signing a License
+1.2 Creating a License: Grants
+──────────────────────────────
+
+  A License carries a verifiable payload from your organization that
+  will "grant" some capabilities, privileges or simply data to your
+  client while they use your software.
+
+
+1.2.1 Verifiable Data
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+  The simplest kind of license just grants some data, in such a way that
+  your application can load the License, verify that it was issued by
+  your organization, and remember for the future so it doesn't have to
+  re-verify the License and associated data.
+
+  For example, you might need to issue an API or license key for some
+  component of your software, and you just want to make sure it's valid
+  data issued by your organization.  Let's create a License using our
+  `Awesome-Inc' authoring keypair, granting a Python `pysimplegui'
+  Distribution key:
+
+  ┌────
+  │ python3 -m crypto_licensing -v --name "Awesome-Inc" \
+  │     --why "AwesomePyApp: PySimpleGUI Distribution Key" \
+  │     license \
+  │     --username admin@awesome-inc.com --password password \
+  │     --product "AwesomePyApp" \
+  │     --domain "awesome-py-app.dominionrnd.com"  --no-confirm \
+  │     --grant '{ "PySimpleGUI": { "License": "ebyzJLMp...20c3" }}' 2>&1
+  └────
+
+  ┌────
+  │     2024-12-30 16:40:56 NORMAL   licensing  registered Found AwesomePyApp: PySimpleGUI Distribution Key Keypair at /Users/perry/.crypto-licensing/Awesome-Inc.crypto-keypair: dqFZIESm5PURJlvKc6YE2QsFKdHfYCvjChmpJXZg0fU=
+  │     2024-12-30 16:40:56 DETAIL   crypto_lic license    Authoring Agent ID Pubkey: dqFZIESm5PURJlvKc6YE2QsFKdHfYCvjChmpJXZg0fU=, from /Users/perry/.crypto-licensing/Awesome-Inc.crypto-keypair
+  │     2024-12-30 16:40:56 NORMAL   crypto_lic license    Issued License <LicenseSigned (from '/Users/perry/.crypto-licensing/AwesomePyApp.crypto-license')> in /Users/perry/.crypto-licensing/AwesomePyApp.crypto-license
+  │     [
+  │ 	"/Users/perry/.crypto-licensing/AwesomePyApp.crypto-license",
+  │ 	{
+  │ 	    "license":{
+  │ 		"author":{
+  │ 		    "domain":"awesome-py-app.dominionrnd.com",
+  │ 		    "name":"Awesome-Inc",
+  │ 		    "product":"AwesomePyApp",
+  │ 		    "pubkey":"dqFZIESm5PURJlvKc6YE2QsFKdHfYCvjChmpJXZg0fU="
+  │ 		},
+  │ 		"dependencies":[],
+  │ 		"grant":{
+  │ 		    "PySimpleGUI":{
+  │ 			"License":"ebyzJLMp...20c3"
+  │ 		    }
+  │ 		}
+  │ 	    },
+  │ 	    "signature":"tKnpz97zmfg7IlrWOjcO+Row3ZAv/gQRHIAj8I9r8vhNYMygbYz5asCUr5tPBlXmf2QPPYpudeBlnOBLp2hUAg=="
+  │ 	}
+  │     ]
+  └────
+
+
+1.2.2 `issue': Signing a License
 ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
 
   A License can be as simple, free-standing authorization with no other
@@ -234,22 +343,22 @@ Table of Contents
   also be confirmed as valid.
 
 
-1.1.4 `verify': Confirm License (and sub-License) Validity
+1.2.3 `verify': Confirm License (and sub-License) Validity
 ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
 
 
-1.2 Using Licenses
+1.3 Using Licenses
 ──────────────────
 
-1.2.1 `load_keys': Find all Ed25519 Signing Keys
+1.3.1 `load_keys': Find all Ed25519 Signing Keys
 ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
 
 
-1.2.2 `load': Find all Licenses
+1.3.2 `load': Find all Licenses
 ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
 
 
-1.2.3 `check': Find all Keys and Valid Licenses
+1.3.3 `check': Find all Keys and Valid Licenses
 ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
 
   Loads every available Ed25519 Keypairs (with the provided
@@ -265,7 +374,7 @@ Table of Contents
   provide different credentials.
 
 
-1.3 Running A `crypto_licensing.licensing' Server
+1.4 Running A `crypto_licensing.licensing' Server
 ─────────────────────────────────────────────────
 
   Supply the `username' and `password' to the `KeypairEncrypted' via

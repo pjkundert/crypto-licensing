@@ -143,13 +143,13 @@ def licensing_bench():
         # and a matching Crypto Licensing Server License issued to this End User Agent ID's
         # pubkey.
         argv	= [
-            #"-v",
+            "-v",
             "--no-gui",
             "--config", CFGPATH,
             "--web", "127.0.0.1:0",
             "--username", "a@b.c",
             "--password", "password",
-            #"--log", "/tmp/crypto-licensing-server.log",
+            "--log", "/tmp/crypto-licensing-server.log",
             #"--no-access",		# Do not redirect sys.stdout/stderr to an access log file
             #"--profile", "licensing.prof", # Optionally, enable profiling (pip install ed25519ll helps...)
         ],
@@ -190,7 +190,7 @@ def licensing_bench():
         client_count	= client_count,
         client_max	= client_max,
         client_kwds	= licensing_cli_kwds,
-        #address_delay	= 5.0,
+        address_delay	= 5.0,
     )
 
     if failed:

@@ -12,7 +12,7 @@ from requests import ConnectionError
 
 from .verification import (
     License, LicenseSigned, authoring, issue, into_keys,
-    Grant,
+    Grant, into_Grant,
     Timespan, into_Timespan, Timestamp, into_Timestamp, into_Duration,
     LicenseIncompatibility
 )
@@ -401,14 +401,14 @@ def test_Grant_grants():
     lic1_prov			= issue( lic1, dominion_sigkey, confirm=confirm )
     lic1_grants			= lic1_prov.grants()
 
-    print( str( lic1_prov.license.grant ) )
+    #print( str( lic1_prov.license.grant ) )
     assert str( lic1_prov.license.grant ) == """\
 {
     "cpppo-test":{
         "Hz":100
     }
 }"""
-    print( str( lic1_grants ) )
+    #print( str( lic1_grants ) )
     assert str( lic1_grants ) == """\
 {
     "cpppo-test":{
@@ -419,7 +419,7 @@ def test_Grant_grants():
     lic2_prov			= issue( lic2, dominion_sigkey, confirm=confirm )
     lic2_grants			= lic2_prov.grants()
 
-    print( str( lic2_grants ) )
+    #print( str( lic2_grants ) )
     assert str( lic2_grants ) == """\
 {
     "cpppo-test":{
@@ -432,7 +432,7 @@ def test_Grant_grants():
     # Confirm that combining grants works
     lic1_comb			= lic1_prov.grants()
     lic1_comb		       |= lic2_grants
-    print( str( lic1_comb ))
+    #print( str( lic1_comb ))
     assert str( lic1_comb) == """\
 {
     "cpppo-test":{
@@ -448,7 +448,7 @@ def test_Grant_grants():
 
     lic2_refi			= lic2_prov.grants()
     lic2_refi		       &= lic1_grants
-    print( str( lic2_refi ) )
+    #print( str( lic2_refi ) )
     assert str( lic2_refi ) == """\
 {
     "cpppo-test":{
@@ -479,6 +479,8 @@ def test_Grant_grants():
 
     assert drv_dup.grants()['cpppo-test']['Hz'] == 100
 
+    # No matter how many times the same dependencies License Grants are supplied, they only apply once.
+    #drv_dup_prov		= issue( drv_dup, awesome_keypair, confirm=False )
     drv_two			= License(
         author	= dict(
             name	= "Awesome, Inc.",
@@ -495,7 +497,9 @@ def test_Grant_grants():
         confirm		= False,  # There is no "Awesome, Inc." or awesome-inc.com ...
     )
 
+    # This license passes through the dependencies' Grants unmollested
     assert drv_two.grants()['cpppo-test']['Hz'] == 300
+    assert drv_two.grants()['cpppo-test']._from == lic1_prov.license.author
 
     grant10			= {
         'cpppo-test': dict(
@@ -508,6 +512,8 @@ def test_Grant_grants():
         ),
     }
 
+    # Derive a License with a Grant within what is supplied by the dependencies.  This one refines
+    # the Grants, but their source remains the original author of the Grant.
     drv_sub			= License(
         author	= dict(
             name	= "Awesome, Inc.",
@@ -519,14 +525,45 @@ def test_Grant_grants():
             name	= "End User, LLC",
             pubkey	= enduser_pubkey
         ),
-        grant		= grant10,
+        grant		= grant10 | { "awesome": { "something": 123 }},
         dependencies	= [ lic1_prov, lic2_prov ],
         timespan	= Timespan( "2022-09-29 11:22:33 Canada/Mountain", "1y" ),
         confirm		= False,  # There is no "Awesome, Inc." or awesome-inc.com ...
     )
 
+    assert str(drv_sub.grants()) == """{
+    "awesome":{
+        "something":123
+    },
+    "cpppo-test":{
+        "Hz":10
+    }
+}"""
+    assert drv_sub.grants()._from is None
+    assert drv_sub.grants()['awesome']._from == drv_sub.author
     assert drv_sub.grants()['cpppo-test']['Hz'] == 10
+    assert drv_sub.grants()['cpppo-test']._from == lic1_prov.license.author
 
+    assert str(Grant( **grant10 )) == """{
+    "cpppo-test":{
+        "Hz":10
+    }
+}"""
+
+    assert lic1_prov.grants() <= lic2_prov.grants()
+
+    def make_Grant( **kwds ):
+        return Grant( **dict( (k, into_Grant( v, _from=k )) for k,v in kwds.items() ))
+
+    assert make_Grant( **grant10 )	<= make_Grant( **grant1000 )
+    assert make_Grant( **grant10 )	<= make_Grant( **grant10 )
+    assert not ( make_Grant( **grant1000 ) <= make_Grant( **grant10 ))
+    assert make_Grant( **grant1000 )	<= make_Grant( **grant1000 )
+    assert make_Grant( **grant1000 )	<= make_Grant( something = dict( good = 1 ), **grant1000 )
+    assert make_Grant( **grant10 )	<= make_Grant( something = dict( good = 1 ), **grant1000 )
+    assert not ( make_Grant( something = dict( good = 1 ), **grant1000 ) <= make_Grant( **grant1000 ))
+
+    # Try to derive a License with a Grant exceeding what the dependencies supply
     with pytest.raises( LicenseIncompatibility ) as exc_info:
         License(
             author	= dict(
