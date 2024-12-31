@@ -39,7 +39,7 @@ PYTESTOPTS	= # --capture=no --log-cli-level=23 # INFO  # DEBUG # 23 == DETAIL # 
 PY3TEST		= TZ=$(TZ) $(PY3) -m pytest $(PYTESTOPTS)
 PY2TEST		= TZ=$(TZ) $(PY2) -m pytest $(PYTESTOPTS)
 
-.PHONY: all test clean build install upload wheel FORCE
+.PHONY: all test clean build install wheel FORCE
 all:			help
 
 help:
@@ -48,7 +48,6 @@ help:
 	@echo "  test			Run unit tests under Python3"
 	@echo "  build			Build Python3 / PyPi artifacts"
 	@echo "  install		Install in /usr/local for Python3"
-	@echo "  upload			Upload new version to pypi (package maintainer only)"
 	@echo "  clean			Remove build artifacts"
 
 #
@@ -233,7 +232,7 @@ crypto-licensing-server:	crypto-licensing $(CREDENTIALS)/crypto-licensing-server
 	    --reverse-save $(KEYPAIR_EXTRA)			\
 	    registered						\
 	    --username $(USERNAME)				\
-	    --seed $$( cat $< ) $(KEYPAIR_OPTIONS)
+	    --seed "$$( cat $< || true )" $(KEYPAIR_OPTIONS)
 
 # Create .crypto-license, signed by .crypto-keypair
 %.crypto-license: %.crypto-keypair
@@ -244,7 +243,8 @@ crypto-licensing-server:	crypto-licensing $(CREDENTIALS)/crypto-licensing-server
 	    --username $(USERNAME) --no-registering		\
 	    --client $(CLIENT) --client-pubkey $(CLIENT_PUBKEY)	\
 	    --grant $(GRANTS)					\
-	    --author $(AUTHOR) --domain $(DOMAIN) --product $(PRODUCT) $(LICENSE_OPTIONS)
+	    --author $(AUTHOR) --domain $(DOMAIN)		\
+	    --product $(PRODUCT) $(LICENSE_OPTIONS)
 
 #
 # Build, including org-mode products.
@@ -298,18 +298,6 @@ install:	install3
 install-%:  # ...-dev, -tests
 	$(PY3) -m pip install --upgrade -r requirements-$*.txt
 
-
-# Support uploading a new version of slip32 to pypi.  Must:
-#   o advance __version__ number in slip32/version.py
-#   o log in to your pypi account (ie. for package maintainer only)
-
-upload-check: FORCE
-	@$(PY3) -m twine --version \
-	    || ( echo -e "\n\n*** Missing Python modules; run:\n\n        $(PY3) -m pip install --upgrade twine\n" \
-	        && false )
-
-upload: 	upload-check wheel
-	$(PY3) -m twine upload --verbose dist/crypto_licensing-$(VERSION)*
 
 clean:
 	@rm -rf MANIFEST *.png build dist auto *.egg-info $(shell find . -name '*.pyc' -o -name '__pycache__' )

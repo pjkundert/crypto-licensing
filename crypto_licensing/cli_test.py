@@ -77,24 +77,24 @@ def test_cli( tmp_path ):
         "license",
         "--author", "End User (self-issued)",
         "--domain", "b.c",
-        "--product", "Something",		# Also implies the Author's Keypair, something
+        "--product", "Something Awesome",	# Implies service name, default basename
         "--username", "a@b.c",
         "--password", "password",
         "--no-confirm",				# Don't confirm Author pubkey via DKIM
-        "--grant", json.dumps( { "some": { "capability": 1 }} ),
+        "--grant", json.dumps( { "something-awesome": { "capability": 1 }} ),
         "--client", "End User",
         "--client-pubkey", vk,
     ] )
-    #print( "license:\n{}\n\n".format( response.output ))
+    print( "license:\n{}\n\n".format( response.output ))
     assert response.exit_code == 0
     filename,license		= json.loads( response.output )
-    assert Path( filename ) == tmp / 'Something.crypto-license'
+    assert Path( filename ) == tmp / 'something-awesome.crypto-license'
     assert license == {
         "license":{
             "author":{
                 "domain":"b.c",
                 "name":"End User (self-issued)",
-                "product":"Something",
+                "product":"Something Awesome",
                 "pubkey":"O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik="
             },
             "client":{
@@ -103,10 +103,10 @@ def test_cli( tmp_path ):
             },
             "dependencies":[],
             "grant":{
-                "some":{
+                "something-awesome":{
                     "capability":1
                 }
             },
         },
-        "signature":"Q4PtEkyTQ2ufHKTrkP495tQ9wCkJwriVu0T84/Wwo49Bixpo7L7fEaItH8hVfKHhtWE9TNPU9oArRBnSYw14Bw==",
+        "signature":"5Z4NsugPpiZRjExQBSBV/kaMzNuypDfIYA1+A1UAGXbFaCvPcjjETbzlQ8mzOaxJTUM9xrS2q0I5tTzW0ovVDQ==",
     }

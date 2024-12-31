@@ -88,7 +88,9 @@ def check( username, password ):
     username			= username or os.getenv( licensing.ENVUSERNAME )
     password			= password or os.getenv( licensing.ENVPASSWORD )
     if password == '-':
-        password		= input_secure( 'Ed25519 password: ', secret=True )
+        password		= input_secure(
+            "{basename} Ed25519 password: ".format( basename=cli.name ), secret=True
+        )
     log.info( "Checking {why} w/ {username}: {password!r}".format(
         why		= cli.why or cli.name,
         username	= username,
@@ -140,7 +142,9 @@ def registered( username, password, extension, registering, seed ):
     username			= username or os.getenv( licensing.ENVUSERNAME )
     password			= password or os.getenv( licensing.ENVPASSWORD )
     if password == '-':
-        password		= input_secure( 'Ed25519 password: ', secret=True )
+        password		= input_secure(
+            "{basename} Ed25519 password: ".format( basename=cli.name ), secret=True
+        )
     log.info( "Registering {why} w/ {username}: {password!r}".format(
         why		= cli.why or cli.name,
         username	= username,
@@ -202,7 +206,9 @@ def license( username, password, registering, author, domain, product, service, 
     username			= username or os.getenv( licensing.ENVUSERNAME )
     password			= password or os.getenv( licensing.ENVPASSWORD )
     if password == '-':
-        password		= input_secure( 'Ed25519 password: ', secret=True )
+        password		= input_secure(
+            "{basename} Ed25519 password: ".format( basename=cli.name ), secret=True
+        )
     log.info( "Licensing {why} w/ {username}: {password!r}".format(
         why		= cli.why or cli.name,
         username	= username,
@@ -242,8 +248,10 @@ def license( username, password, registering, author, domain, product, service, 
         path	= keypair._from,
     ))
 
-    # Issue and save (or find) the License, named after the --product, or default to the Authoring
-    # keypair name (for example, in simple cases where the Authoring keypair is only used for a
+    # Issue and save (or find) the License, named after the service name (or the product converted
+    # to a service name), (eg. "some-service-name", the same as used for the License grant name and
+    # the DNS <service>.crypto-licensing._domainkey.<domain> verification), or default to the
+    # Authoring keypair name (ie. in simple cases where the Authoring keypair is only used for a
     # single License and is the same as the product name)
     lic				= licensing.license(
         author		= licensing.Agent(
@@ -261,7 +269,7 @@ def license( username, password, registering, author, domain, product, service, 
         dependencies	= dependencies,
         grant		= grant,
         why		= cli.why or product,
-        basename	= product or cli.name,
+        basename	= service or licensing.domainkey_service( product ) or cli.name,
         confirm		= confirm,
         reverse_save	= cli.reverse_save,
         extra		= cli.extra,
