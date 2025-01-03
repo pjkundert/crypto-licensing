@@ -130,7 +130,8 @@ export CRYPTO_LIC_USERNAME
 # USERNAME	= "someone@example.com"
 # PASSWORD	= "password"
 
-products:			end-user			\
+products:			dominion			\
+				end-user			\
 				cpppo-test			\
 				crypto-licensing		\
 				crypto-licensing-server
@@ -138,6 +139,22 @@ products:			end-user			\
 test-server:			products
 	rm licensing.db; $(PY3) -m crypto_licensing.licensing -vvvv --no-gui --username=a@b.c --password=password --config crypto_licensing/licensing
 
+
+GLOBAL_OPTIONS	= -v
+
+#
+# The Master Dominion License, sub-Licensable by any client.  Transports basic Dominion R&D Corp.
+# information reliably into any License, such as Dominion's crypto wallets, ....
+#
+dominion:			AUTHOR="Dominion R&D Corp."
+dominion:			KEYNAME="dominion"
+dominion:			USERNAME="perry@dominionrnd.com"
+dominion:			DOMAIN="dominionrnd.com"
+dominion:			PRODUCT="Dominion"
+dominion:			SERVICE="dominion"
+dominion:			GRANTS=$(shell cat $(basename $@).grants )
+dominion:			CRYPTO_LIC_PASSWORD=$(shell cat $(basename $@).crypto-password || echo - )
+dominion:			$(CREDENTIALS)/dominion.crypto-license
 
 #
 # An Agent ID we can use as an End User.  This is the Agent ID to which the final License is issued.
@@ -152,13 +169,12 @@ end-user:			$(CREDENTIALS)/end-user.crypto-keypair
 	ln -fs $< $(CREDENTIALS)/crypto-licensing-server.crypto-keypair-end-user
 
 
-GLOBAL_OPTIONS	= -vv
 cpppo-test:			AUTHOR="Dominion R&D Corp."
-cpppo-test:			DOMAIN=dominionrnd.com
+cpppo-test:			DOMAIN="dominionrnd.com"
 cpppo-test:			PRODUCT="Cpppo Test"
 cpppo-test:			SERVICE="cpppo-test"
-cpppo-test:			USERNAME=perry@dominionrnd.com
-cpppo-test:			CRYPTO_LIC_PASSWORD=$(shell cat ~/.crypto-licensing/cpppo-test.crypto-password )
+cpppo-test:			USERNAME="perry@dominionrnd.com"
+cpppo-test:			CRYPTO_LIC_PASSWORD=$(shell cat $(basename $@).crypto-password || echo - )
 cpppo-test:			CLIENT="End User"
 cpppo-test:			CLIENT_PUBKEY="Yhb9q2B4/fX0Ppt7onaJWwcxdgrEw6WrqoX4Bkfpe6k="
 cpppo-test:			GRANTS="{\"cpppo-test\": { \"Hz\": 1000 }}"
@@ -171,55 +187,39 @@ cpppo-test:			$(CREDENTIALS)/cpppo-test.crypto-license
 # identified in Dominon R&D DNS "DKIM" record:
 #
 #     $ dig +short  crypto-licensing.crypto-licensing._domainkey.dominionrnd.com TXT
-#     "v=DKIM1; k=ed25519; p=5cijeUNWyR1mvbIJpqNmUJ6V4Od7vPEgVWOEjxiim8w="
+#     "v=DKIM1; k=ed25519; p=je1DULlAfRv05GFBPWZwwt1RdRE7FyzImJeKBmH6BKE="
 #
 # Typically, these kinds of Licenses would be issued to clients by the Dominion crypto-licensing
 # server at https://crypto-licensing.dominionrnd.com, but the first one, required to "bootstrap" the
 # first crypto-licensing server, must be created manually.
+# 
+# This License is the "default" for Crypto Licensing, and is sub-Licensable by anyone; if alternative terms
+# are desired, then a client-specific license can be issued...
 #
-crypto-licensing:		AUTHOR="Dominion R&D Corp."
-crypto-licensing:		DOMAIN=dominionrnd.com
+crypto-licensing:		AUTHOR="Dominion R&D Corp. (Licensing)"
+crypto-licensing:		KEYNAME="crypto-licensing"
+crypto-licensing:		DOMAIN="dominionrnd.com"
 crypto-licensing:		PRODUCT="Crypto Licensing"
 crypto-licensing:		SERVICE="crypto-licensing"
-crypto-licensing:		USERNAME=perry@dominionrnd.com
-crypto-licensing:		CRYPTO_LIC_PASSWORD=$(shell cat ~/.crypto-licensing/crypto-licensing.crypto-password )
-crypto-licensing:		CLIENT=$(AUTHOR)
-crypto-licensing:		CLIENT_PUBKEY="8pF7T3nbMAXyf85doRcWqbj8nuJL2QhFdGesLdnFL/8="
-crypto-licensing:		GRANTS="{\"crypto-licensing\": {\
-    \"fees\": { \
-        \"rate\": \"1%\", \
-        \"crypto\": { \
-            \"ETH\": \"0xe4909b66FD66DA7d86114695A1256418580C8767\", \
-            \"BTC\": \"bc1qygm3dlynmjxuflghr0hmq6r7wmff2jd5gtgz0q\" \
-        }\
-    }\
-}}"
-crypto-licensing:		$(CREDENTIALS)/crypto-licensing.crypto-license
+crypto-licensing:		USERNAME="licensing@dominionrnd.com"
+crypto-licensing:		CRYPTO_LIC_PASSWORD=$(shell cat $(basename $@).crypto-password || echo - )
+crypto-licensing:		LICENSE_OPTIONS=--dependency $(CREDENTIALS)/dominion.crypto-license
+crypto-licensing:		GRANTS=$(shell cat $(basename $@).grants )
+crypto-licensing:		dominion $(CREDENTIALS)/crypto-licensing.crypto-license
 
-
-# The end-user License to run the Crypto Licensing Server
-crypto-licensing-server:	AUTHOR="Dominion R&D Corp."
-crypto-licensing-server:	DOMAIN=dominionrnd.com
+# The general License to run the Crypto Licensing Server
+crypto-licensing-server:	AUTHOR="Dominion R&D Corp. (Licensing Server)"
+crypto-licensing-server:	KEYNAME="crypto-licensing-server"
+crypto-licensing-server:	DOMAIN="dominionrnd.com"
 crypto-licensing-server:	PRODUCT="Crypto Licensing Server"
 crypto-licensing-server:	SERVICE="crypto-licensing-server"
-crypto-licensing-server:	USERNAME=perry@dominionrnd.com
-crypto-licensing-server:	CRYPTO_LIC_PASSWORD=$(shell cat ~/.crypto-licensing/crypto-licensing-server.crypto-password )
-crypto-licensing-server:	CLIENT="End User"
-crypto-licensing-server:	CLIENT_PUBKEY="fzbBlsjV5UQl2vF/89cQMizbWrQDOaN+PciMQnGIUNg="  # end-user.crypto-keypair
-crypto-licensing-server:	LICENSE_OPTIONS=--dependency $(CREDENTIALS)/crypto-licensing.crypto-license # --no-confirm
-crypto-licensing-server:	GRANTS="{\"crypto-licensing-server\": {\
-    \"override\": { \
-        \"rate\": \"0.1%\", \
-        \"crypto\": { \
-            \"ETH\": \"0xe4909b66FD66DA7d86114695A1256418580C8767\", \
-            \"BTC\": \"bc1qygm3dlynmjxuflghr0hmq6r7wmff2jd5gtgz0q\" \
-        }\
-    }\
-}}"
+crypto-licensing-server:	USERNAME="licensing@dominionrnd.com"
+crypto-licensing-server:	CRYPTO_LIC_PASSWORD=$(shell cat $(basename $@).crypto-password || echo - )
+crypto-licensing-server:	LICENSE_OPTIONS=--dependency $(CREDENTIALS)/crypto-licensing.crypto-license
+crypto-licensing-server:	GRANTS=$(shell cat $(basename $@).grants )
 crypto-licensing-server:	crypto-licensing $(CREDENTIALS)/crypto-licensing-server.crypto-license
 
 
-# Preserve all "secondary" intermediate files (eg. the .crypto-keypair generated)
 .SECONDARY:
 
 # Create .crypto-keypair from seed; note: if the make rule fails, intermediate files are deleted.
@@ -228,8 +228,8 @@ crypto-licensing-server:	crypto-licensing $(CREDENTIALS)/crypto-licensing-server
 # most-specific writable location (instead of the default most-general).
 %.crypto-keypair: %.crypto-seed
 	$(PY3) -m crypto_licensing $(GLOBAL_OPTIONS)		\
-	    --name $(basename $@ )				\
-	    --reverse-save $(KEYPAIR_EXTRA)			\
+	    --name $(KEYNAME)					\
+	    --extra $(dir $(basename $@ )) --reverse-save	\
 	    registered						\
 	    --username $(USERNAME)				\
 	    --seed "$$( cat $< || true )" $(KEYPAIR_OPTIONS)
@@ -238,13 +238,12 @@ crypto-licensing-server:	crypto-licensing $(CREDENTIALS)/crypto-licensing-server
 %.crypto-license: %.crypto-keypair
 	$(PY3) -m crypto_licensing $(GLOBAL_OPTIONS)		\
 	    --name $(basename $@ )				\
-	    --reverse-save $(KEYPAIR_EXTRA)			\
+	    --extra $(dir $(basename $@ )) --reverse-save	\
 	   license						\
 	    --username $(USERNAME) --no-registering		\
-	    --client $(CLIENT) --client-pubkey $(CLIENT_PUBKEY)	\
-	    --grant $(GRANTS)					\
+	    --grant '$(GRANTS)'					\
 	    --author $(AUTHOR) --domain $(DOMAIN)		\
-	    --product $(PRODUCT) $(LICENSE_OPTIONS)
+	    --service $(SERVICE) --product $(PRODUCT) $(LICENSE_OPTIONS)
 
 #
 # Build, including org-mode products.

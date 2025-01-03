@@ -939,7 +939,7 @@ class Agent( Serializable ):
         Use DNS-over-HTTPS, to ensure we receive a valid TXT record for the specified domain:
 
             >>> from . import doh
-            >>> results = doh.query( 'crypto-licensing.crypto-licensing._domainkey.dominionrnd.com', 'TXT' )
+            >>> results = doh.query( 'dominion.crypto-licensing._domainkey.dominionrnd.com', 'TXT' )
             >>> assert results[0]['data'] == 'v=DKIM1; k=ed25519; p=5cijeUNWyR1mvbIJpqNmUJ6V4Od7vPEgVWOEjxiim8w='
 
         We used to do this, but it was insecure, because anyone could implement their own

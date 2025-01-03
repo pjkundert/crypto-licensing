@@ -18,13 +18,13 @@
 from __future__ import absolute_import, print_function, division
 
 import click
-import codecs
 import json
 import logging
 import os
 
 from .misc	import log_cfg, log_level, CONFIG_BASE, input_secure
 from .		import licensing
+from .licensing.verification import into_bytes
 
 
 __author__                      = "Perry Kundert"
@@ -150,10 +150,16 @@ def registered( username, password, extension, registering, seed ):
         username	= username,
         password	= '*' * len( password ) if password else password,
     ))
-    if seed and seed.lower().startswith( '0x' ):
-        seed			= seed[2:]
+    if seed:
+        # Accept seed as either a base-64 encoded private key, or a (default) hex seed
+        if seed.endswith( '=' ):
+            seed		= into_bytes( seed, ('base64',) )
+        else:
+            if seed.lower().startswith( '0x' ):
+                seed		= seed[2:]
+            seed		= into_bytes( seed, ('hex',) )
     keypair			= licensing.registered(
-        seed		= codecs.decode( seed, 'hex_codec' ) if seed else None,
+        seed		= seed if seed else None,
         why		= cli.why or username,
         basename	= cli.name,
         extension	= extension,
@@ -248,11 +254,11 @@ def license( username, password, registering, author, domain, product, service, 
         path	= keypair._from,
     ))
 
-    # Issue and save (or find) the License, named after the service name (or the product converted
-    # to a service name), (eg. "some-service-name", the same as used for the License grant name and
-    # the DNS <service>.crypto-licensing._domainkey.<domain> verification), or default to the
-    # Authoring keypair name (ie. in simple cases where the Authoring keypair is only used for a
-    # single License and is the same as the product name)
+    # Issue and save (or find) the License, named after the product converted to a service name,
+    # (eg. "some-service-name", the same as used for the License grant name and the DNS
+    # <service>.crypto-licensing._domainkey.<domain> verification), or the specified service name,
+    # or default to the Authoring keypair name (ie. in simple cases where the Authoring keypair is
+    # only used for a single License and is the same as the product name)
     lic				= licensing.license(
         author		= licensing.Agent(
             name	= author or cli.name,
@@ -269,7 +275,7 @@ def license( username, password, registering, author, domain, product, service, 
         dependencies	= dependencies,
         grant		= grant,
         why		= cli.why or product,
-        basename	= service or licensing.domainkey_service( product ) or cli.name,
+        basename	= licensing.domainkey_service( product ) or service or cli.name,
         confirm		= confirm,
         reverse_save	= cli.reverse_save,
         extra		= cli.extra,

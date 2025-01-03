@@ -77,7 +77,7 @@ def test_cli( tmp_path ):
         "license",
         "--author", "End User (self-issued)",
         "--domain", "b.c",
-        "--product", "Something Awesome",	# Implies service name, default basename
+        "--product", "Something Awesome",       # Implies service name, default basename
         "--username", "a@b.c",
         "--password", "password",
         "--no-confirm",				# Don't confirm Author pubkey via DKIM

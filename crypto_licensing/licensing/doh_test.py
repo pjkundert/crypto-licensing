@@ -66,7 +66,7 @@ def test_doh_smoke():
 
 def test_doh_api():
     recs			= doh.query(
-        'crypto-licensing.crypto-licensing._domainkey.dominionrnd.com', 'TXT' )
+        'dominion.crypto-licensing._domainkey.dominionrnd.com', 'TXT' )
     print( json.dumps( recs ) )
 
     assert len( recs ) == 1

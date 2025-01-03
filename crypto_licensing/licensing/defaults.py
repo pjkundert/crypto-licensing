@@ -29,7 +29,7 @@ DISTRIBUTION			= 'crypto-licensing'
 COMPANY				= "Dominion Research & Development Corp."
 DOMAIN				= "dominionrnd.com"
 PRODUCT				= "Crypto Licensing"
-PUBKEY				= "5cijeUNWyR1mvbIJpqNmUJ6V4Od7vPEgVWOEjxiim8w="
+PUBKEY				= "je1DULlAfRv05GFBPWZwwt1RdRE7FyzImJeKBmH6BKE="
 
 #
 # The Crypto Licensing Server application:  python3 -m crypto_licensing.licensing
