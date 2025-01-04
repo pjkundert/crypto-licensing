@@ -47,6 +47,12 @@ package_dir			= {
     "crypto_licensing/licensing/doh":	"./crypto_licensing/licensing/doh",
 }
 
+package_data			= {
+    'crypto_licensing': [
+        'licensing/static/txt/*.txt',
+    ],
+}
+
 
 long_description_content_type	= 'text/plain'
 long_description		= """\
@@ -80,7 +86,9 @@ setup(
     install_requires		= install_requires,
     packages			= package_dir.keys(),
     package_dir			= package_dir,
+    package_data		= package_data,
     include_package_data	= True,
+    zip_safe			= True,
     entry_points		= entry_points,
     author			= "Perry Kundert",
     author_email		= "perry@dominionrnd.com",
