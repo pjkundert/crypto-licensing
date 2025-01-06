@@ -893,12 +893,21 @@ def config_paths( filename, extra=None ):
     other 'extra' directories are provided, is to allow the caller to *avoid* searching/writing
     in/to the current directory!  Include '.' somewhere in 'extras' if this is appropriate.
 
+    The set of default search PATHS functions can be globally altered by assigning a new list of
+    f(<filename>) to config_paths.PATHS, which produce a path containing the target <filename>.
+
     """
-    yield os.path.join( os.getenv( 'APPDATA', os.sep + 'etc' ), filename )      # global app data dir, eg. /etc/ (most general)
-    yield os.path.join( os.path.expanduser( '~' ), '.'+CONFIG_BASE, filename )  # user dir, ~username/.crypto-licensing/name
-    yield os.path.join( os.path.expanduser( '~' ), '.' + filename )		# user dir, ~username/.name
+    for pf in config_paths.PATHS:						# any default dirs...
+        yield pf( filename )							# from least to most specific
     for e in ( [ '.' ] if extra is None else extra ):				# any extra dirs...
-        yield os.path.join( e, filename )					# default; relative to current working dir (most specific)
+        yield os.path.join( e, filename )					# default . unless []; relative to current working dir (most specific)
+
+
+config_paths.PATHS		= [
+    lambda fn: os.path.join( os.getenv( 'APPDATA', os.sep + 'etc' ), fn ),      # global app data dir, eg. /etc/ (most general)
+    lambda fn: os.path.join( os.path.expanduser( '~' ), '.'+CONFIG_BASE, fn ),  # user dir, ~username/.crypto-licensing/name
+    lambda fn: os.path.join( os.path.expanduser( '~' ), '.' + fn ),		# user dir, ~username/.name
+]
 
 
 try:
