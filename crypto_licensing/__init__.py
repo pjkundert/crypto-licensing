@@ -21,7 +21,7 @@ __email__                       = "perry@dominionrnd.com"
 __copyright__                   = "Copyright (c) 2022, Dominion Research & Development Corp."
 __license__                     = "Dual License: GPLv3 (or later) and Commercial (see LICENSE)"
 
-__all__				= ['ed25519', 'licensing', 'misc']
+__all__				= ['ed25519', 'x25519', 'licensing', 'misc']
 
 # These modules form the public interface of crypto-licensing; always load them into main namespace
 from .version	import __version__, __version_info__
