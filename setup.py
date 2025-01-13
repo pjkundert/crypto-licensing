@@ -41,6 +41,7 @@ extras_require['tests']		= tests_require
 
 package_dir			= {
     "crypto_licensing":			"./crypto_licensing",
+    "crypto_licensing/x25519":		"./crypto_licensing/x25519",
     "crypto_licensing/ed25519":		"./crypto_licensing/ed25519",
     "crypto_licensing/ed25519ll_pyonly":"./crypto_licensing/ed25519ll_pyonly",
     "crypto_licensing/licensing":	"./crypto_licensing/licensing",
