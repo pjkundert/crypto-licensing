@@ -2,6 +2,7 @@
 # GNU 'make' file
 #
 
+
 # PY[23] is the target Python interpreter.  It must have pytest installed.
 # The python2 assumes a Nix supplied python2, and that all Python2 "pip"
 # modules have been installed locally.  To test Python2, install Nix and try:
@@ -12,7 +13,7 @@
 PY2		?= PIP_USER=1 PYTHONPATH=~/.local/lib/python2.7/site-packages/ python2
 PY2_V	= $(shell $(PY2) -c "import sys; print('-'.join((next(iter(filter(None,sys.executable.split('/')))),sys.platform,sys.subversion[0].lower(),''.join(map(str,sys.version_info[:2])))))"  )
 PY3		?= python3
-PY3_V	= $(shell $(PY3) -c "import sys; print('-'.join((next(iter(filter(None,sys.executable.split('/')))),sys.platform,sys.implementation.cache_tag)))" 2>/dev/null )
+PY3_V		= $(shell $(PY3) -c "import sys; print('-'.join((next(iter(filter(None,sys.executable.split('/')))),sys.platform,sys.implementation.cache_tag)))" 2>/dev/null )
 
 TZ		?= Canada/Mountain
 
@@ -25,10 +26,7 @@ GHUB_NAME	= crypto-licensing
 GHUB_REPO	= git@github.com:pjkundert/$(GHUB_NAME).git
 GHUB_BRCH	= $(shell git rev-parse --abbrev-ref HEAD )
 
-# We'll agonizingly find the directory above this makefile's path
-VENV_DIR	= $(abspath $(dir $(abspath $(lastword $(MAKEFILE_LIST))))/.. )
-VENV_NAME	= $(GHUB_NAME)-$(VERSION)-$(PY3_V)
-VENV		= $(VENV_DIR)/$(VENV_NAME)
+VENV		= $(CURDIR)-$(VERSION)-$(PY3_V)
 VENV_OPTS	=
 
 NIX_OPTS	?= # --pure
@@ -43,25 +41,35 @@ PY2TEST		= TZ=$(TZ) $(PY2) -m pytest $(PYTESTOPTS)
 all:			help
 
 help:
-	@echo "GNUmakefile for crypto-licensing.  Targets:"
+	@echo "GNU 'make' file for crypto-licensing.  Targets:"
 	@echo "  help			This help"
 	@echo "  test			Run unit tests under Python3"
 	@echo "  build			Build Python3 / PyPi artifacts"
 	@echo "  install		Install in /usr/local for Python3"
 	@echo "  clean			Remove build artifacts"
+	@echo
+	@echo "  nix-venv               Create and/or start Nix-supplied Python virtual env"
+	@echo "  nix-venv-test          Run the 'make test' target within the Nix Python venv"
+	@echo "  TARGET=py313 nix-...   Use a Python 3.13 Nix environment for the remaining targets"
 
 #
 # nix-...:
 #
-# Use a NixOS environment to execute the make target, eg.
+# Use a Nix flake environment to execute the make target, eg.
 #
 #     nix-venv-activate
 #
-#     The default is the Python 3 crypto_licensing target in default.nix; choose
-# TARGET=py27 to test under Python 2 (more difficult as time goes on; needs old nixpkgs.nix).
+#     The default is the combined Python environment with all versions.
+# To use a specific Python version, set TARGET=py310, py311, py312, py313, py39, or pypy310:
+#
+#     TARGET=py311 make nix-test
 #
 nix-%:
-	nix-shell $(NIX_OPTS) --run "make $*"
+	@if [ -n "$(TARGET)" ]; then \
+		nix develop .#$(TARGET) $(NIX_OPTS) --command make $*; \
+	else \
+		nix develop $(NIX_OPTS) --command make $*; \
+	fi
 
 #
 # test...:	Perform Unit Tests
@@ -103,11 +111,17 @@ venv:			$(VENV)
 	@echo; echo "*** Activating $< VirtualEnv for Interactive $(SHELL)"
 	@bash --init-file $</bin/activate -i
 
+venv-%:			$(VENV)
+	@echo; echo "*** Running in $< VirtualEnv: make $*"
+	@bash --init-file $</bin/activate -ic "make $*"
+
+
 $(VENV):
+	@[[ "$(PY3_V)" =~ "^venv" ]] && ( echo -e "\n\n!!! $@ Cannot start a venv within a venv"; false ) || true
 	@echo; echo "*** Building $@ VirtualEnv..."
-	@rm -rf $@ && $(PY3) -m venv $(VENV_OPTS) $@ \
+	@rm -rf $@ && $(PY3) -m venv $(VENV_OPTS) $@ && sed -i -e '1s:^:. $$HOME/.bashrc\n:' $@/bin/activate \
 	    && source $@/bin/activate \
-	    && make install install-tests
+	    && make install-dev install
 
 #
 # Bootstrap a License for a product, and a sub-License issue to an end-user of that product
