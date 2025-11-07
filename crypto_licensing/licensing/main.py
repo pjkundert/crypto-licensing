@@ -135,7 +135,7 @@ def db_setup():
 
         # Load all licensing.sql* config files into the licensing.db Sqlite3 file.  We want to load
         # SQL files from most general/distant to most specific/nearest, so make reverse=False.
-        global config_extra
+        #global config_extras
         for f in config_open( SQLFILE+'*', extra=config_extras, skip='*~', reverse=False ):
             with f:
                 sql		= f.read()
@@ -244,7 +244,7 @@ def licenses( confirm=None, stored=None ):
     path			= None
     try:
         # Load most general/distant Licenses first, including the optional extra config dirs
-        global config_extras
+        #global config_extras
         for path, prov in licensing.load( package=__package__, extra=config_extras, reverse=False ):
             for sig, lic in emit( prov ):
                 yield sig, lic
@@ -278,7 +278,7 @@ def credentials( *add ):
     try:
         # Open any licensing.credentials* in configuration path.  We want to load most
         # general/distant files first so make reverse=True.
-        global config_extras
+        #global config_extras
         for f in config_open( CRDFILE+'*', extra=config_extras, skip='*~', reverse=False ):
             with f:
                 # Each licensing.credentials* file should be a sequence of:
@@ -335,7 +335,7 @@ def keypairs():
         # want to load the most general/distant keys first, so reverse=False.
         path			= None
         try:
-            global config_extras
+            #global config_extras
             for path, keypair_src, cred, keypair in licensing.load_keypairs(
                     username=username, password=password,
                     detail=True, every=True,  # keypair may be an Exception
@@ -530,7 +530,7 @@ def signal_service():
             if isinstance( hdlr, logging.FileHandler ):
                 hdlr.close()
 
-    global uptime_basis
+    #global uptime_basis
     if uptime_signalled:
         uptime_signalled	= False
         uptime			= timer() - uptime_basis
@@ -1601,7 +1601,7 @@ Disallow: /
     app				= web.application( urls, locals() )
 
     # Sessions
-    global session_initializer
+    #global session_initializer
     session			= web.session.Session(
         app, web.session.DBStore( db, 'sessions' ), initializer=session_initializer )
 
