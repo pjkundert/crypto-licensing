@@ -1,3 +1,5 @@
+import pytest
+
 from . import ed25519, x25519
 
 
@@ -54,6 +56,11 @@ def test_multiparty_ecdh():
 
     # Step 9: Carol -> Alice
     cg, cg_includes	= carol.initial_intermediate_value()
+    assert cg_includes == {carol.ed25519_public}
+
+    with pytest.raises(AssertionError, match=r"Intermediate value is missing keys: ([0-9a-f]+[,;]\s){2}should only"):
+        # Can't compute final secret if it doesn't contain enough other keys (missing exactly 2)
+        bob.compute_final_secret(cg, cg_includes)
 
     # Step 10: Alice -> Bob
     cga, cga_includes	= alice.compute_intermediate_value( cg, cg_includes )
@@ -62,12 +69,16 @@ def test_multiparty_ecdh():
     cgab, cgab_includes	= bob.compute_final_secret( cga, cga_includes )
     bob_secret		= cgab
 
+    with pytest.raises(AssertionError, match="Intermediate value is missing keys: None; should only"):
+        # Can't compute final secret if it already includes this key
+        bob.compute_final_secret(cgab, cgab_includes)
+
     print("\nFinal shared secrets (int):")
     print(f"Alice: {alice_secret}")
     print(f"Bob:   {bob_secret}")
     print(f"Carol: {carol_secret}")
 
-    secrets		= alice_secret,bob_secret,carol_secret
+    secrets		= alice_secret, bob_secret, carol_secret
 
     # Verify all parties have the same secret
     assert all( s == secrets[0] for s in secrets[1:] ), "Shared secrets don't match!"

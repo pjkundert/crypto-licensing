@@ -130,8 +130,8 @@ class ECDH:
     
     def compute_final_secret(self, received_value: int, included: set[ int ] ):
         """Compute final shared secret, from value with all other desired keys already included."""
-        assert included | {self.ed25519_public} == self.desired, \
-            f"Intermediate value is missing keys: {', '.join( vk.hex for vk in self.desired - included)}" \
-            f"; should only have been missing: {self.ed25519_public}"
+        assert self.ed25519_public not in included and self.ed25519_public not in included and included | {self.ed25519_public} == self.desired, \
+            f"Intermediate value is missing keys: {', '.join( vk.hex() for vk in (self.desired - included)) or None}" \
+            f"; should only have been missing: {self.ed25519_public.hex()}"
         self.shared_secret = curve25519(self.x25519_private, received_value)
         return self.shared_secret, self.desired
