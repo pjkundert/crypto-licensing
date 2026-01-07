@@ -1,7 +1,0 @@
-build
-packaging
-flake8
-pip
-pytest		>=4.6
-setuptools
-wheel

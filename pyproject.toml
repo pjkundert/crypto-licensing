@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools >= 40.9.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name			= "crypto_licensing"
+dynamic			= ["version"]
+description		= "The crypto-licensing module implements Ed25519-signed license checking and automatic issuance after cryptocurrency payment"
+readme			= {file = "README.txt", content-type = "text/plain"}
+requires-python		= ">=3"
+keywords		= ["licensing", "Bitcoin", "Ethereum", "cryptocurrency", "payments", "Ed25519", "signatures"]
+license			= "GPL-3.0-or-later OR LicenseRef-Proprietary"
+license-files		= ["LICENSE", "COPYING"]
+authors			= [
+    { name = "Perry Kundert", email = "perry@dominionrnd.com" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Environment :: Console",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Office/Business :: Financial",
+]
+
+dependencies = [
+    "click",
+    "pycryptodome		>=3.16,<4",
+    "dnspython",
+    "enum34			>=1.1	; python_version < \"3.4\"",
+    "future			>=1",
+    "pathlib2			>=2.3	; python_version < \"3.4\"",
+    "pytz				; python_version < \"3.9\"",
+    "pytz_deprecation_shim		; python_version >= \"3.9\"",
+    "requests			>=2.20,<3",
+    "requests-toolbelt	>=1		; python_version > \"2\"",
+    "tzlocal",
+]
+
+[project.optional-dependencies]
+server = [
+    "web.py-update		>=0.75",
+    "wsgilog			>=0.3",
+    "legacy-cgi			>=2.6	; python_version >= \"3.13\"",
+    "cpppo			>=5.0.0",
+]
+
+tests = [
+    "flake8",
+    "pytest			>=4.6",
+]
+
+dev = [
+    "build",
+    "setuptools",
+    "wheel",
+    "packaging",
+    "pytest			>=4.6",
+]
+
+[project.urls]
+"Bug Tracker"		= "https://github.com/pjkundert/crypto-licensing/issues"
+Homepage		= "https://github.com/pjkundert/crypto-licensing"
+
+[project.scripts]
+crypto-licensing	= "crypto_licensing.licensing.main:main"
+
+[tool.setuptools]
+zip-safe		= true
+include-package-data	= true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["crypto_licensing*"]
+
+[tool.setuptools.package-data]
+crypto_licensing = [
+    "licensing/static/",
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "crypto_licensing.version.__version__"}

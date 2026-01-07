@@ -2,5 +2,5 @@
 include LICENSE
 include COPYING
 include README.org
-include requirements*.txt
 global-exclude *~
+recursive-include crypto_licensing/licensing/static *.txt

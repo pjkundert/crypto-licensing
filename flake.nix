@@ -2,7 +2,7 @@
   description = "Crypto Licensing development environment with multiple Python versions";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/16c7794d0a28b5a37904d55bcca36003b9109aaa";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -17,150 +17,88 @@
           pip
         ]);
 
-        python39Env = mkPythonEnv pkgs.python39;
+        python39Env  = mkPythonEnv pkgs.python39;
         python310Env = mkPythonEnv pkgs.python310;
         python311Env = mkPythonEnv pkgs.python311;
         python312Env = mkPythonEnv pkgs.python312;
         python313Env = mkPythonEnv pkgs.python313;
-        pypy310Env = pkgs.pypy310.withPackages (ps: with ps; [
-          pytest
-        ]);
+        python314Env = mkPythonEnv pkgs.python314;
+        python3Env   = mkPythonEnv pkgs.python3;
+        pypy310Env   = mkPythonEnv pkgs.pypy310;
+        pypy3Env     = mkPythonEnv pkgs.pypy3;
 
+        # Common build inputs for all dev shells
+        commonInputs = with pkgs; [
+          cacert
+          git
+          gnumake
+          openssh
+          bash
+          bash-completion
+          which
+        ];
+
+        commonShellHook = ''
+          echo "Welcome to the Crypto Licensing multi-Python development environment!"
+          echo "Available Python interpreters:"
+          echo ""
+          for cmd in python python3.9 python3.10 python3.11 python3.12 python3.13 python3.14 pypy3 pypy3.10; do
+            printf "%-12s: %-20.19s: %s\n" "$cmd" "$($cmd --version 2>/dev/null || echo "(unavailable)")" "$(which $cmd 2>/dev/null)"
+          done
+          echo ""
+          echo "All available versions have pytest and pip installed."
+          echo "Use 'make test' to run tests with the default Python version."
+        '';
+
+        # Create a dev shell with specific Python environment(s) and optional extras
+        mkDevShell = { pythonEnvs, extraInputs ? [], shellHook ? commonShellHook}: pkgs.mkShell {
+          buildInputs = commonInputs ++ pythonEnvs ++ extraInputs;
+          inherit shellHook;
+        };
       in {
         # Single development shell with all Python versions
-        devShells.default = pkgs.mkShell {
-          buildInputs = with pkgs; [
-            # Common tools
-            cacert
-            git
-            gnumake
-            openssh
-            bash
-            bash-completion
-            which
-
-            # All Python versions with packages
-           #python39Env
-           #python310Env
-            python311Env
-            python312Env
-            python313Env
-           #pypy310Env
+        devShells.default = mkDevShell {
+          pythonEnvs = [
+            python3Env
+            pypy3Env
           ];
-
-          shellHook = ''
-            echo "Welcome to the Crypto Licensing multi-Python development environment!"
-            echo "Available Python interpreters:"
-            echo "  python:     $(python     --version 2>/dev/null || echo 'not available')"
-            echo "  python3.9:  $(python3.9  --version 2>/dev/null || echo 'not available')"
-            echo "  python3.10: $(python3.10 --version 2>/dev/null || echo 'not available')"
-            echo "  python3.11: $(python3.11 --version 2>/dev/null || echo 'not available')"
-            echo "  python3.12: $(python3.12 --version 2>/dev/null || echo 'not available')"
-            echo "  python3.13: $(python3.13 --version 2>/dev/null || echo 'not available')"
-            echo "  pypy3.10:   $(pypy3.10   --version 2>/dev/null || echo 'not available')"
-            echo ""
-            echo "All versions have pytest and pip installed."
-            echo ""
-            echo "Use 'make test' to run tests with the default Python version."
-          '';
         };
 
         # Individual development shells for specific Python versions
-        devShells.py39 = pkgs.mkShell {
-          buildInputs = [
-            pkgs.cacert
-            pkgs.git
-            pkgs.gnumake
-            pkgs.openssh
-            pkgs.bash
-            pkgs.bash-completion
-
-            python39Env
-          ];
-          shellHook = ''
-            echo "Python 3.9 environment"
-          '';
+        devShells.py39 = mkDevShell {
+          pythonEnvs = [ python39Env ];
         };
 
-        devShells.py310 = pkgs.mkShell {
-          buildInputs = [
-            pkgs.cacert
-            pkgs.git
-            pkgs.gnumake
-            pkgs.openssh
-            pkgs.bash
-            pkgs.bash-completion
-
-            python310Env
-          ];
-          shellHook = ''
-            echo "Python 3.10 environment"
-          '';
+        devShells.py310 = mkDevShell {
+          pythonEnvs = [ python310Env ];
         };
 
-        devShells.py311 = pkgs.mkShell {
-          buildInputs = [
-            pkgs.cacert
-            pkgs.git
-            pkgs.gnumake
-            pkgs.openssh
-            pkgs.bash
-            pkgs.bash-completion
-
-            python311Env
-          ];
-          shellHook = ''
-            echo "Python 3.11 environment"
-          '';
+        devShells.py311 = mkDevShell {
+          pythonEnvs = [ python311Env ];
         };
 
-        devShells.py312 = pkgs.mkShell {
-          buildInputs = [
-            pkgs.cacert
-            pkgs.git
-            pkgs.gnumake
-            pkgs.openssh
-            pkgs.bash
-            pkgs.bash-completion
-
-            python312Env
-          ];
-          shellHook = ''
-            echo "Python 3.12 environment"
-          '';
+        devShells.py312 = mkDevShell {
+          pythonEnvs = [ python312Env ];
         };
 
-        devShells.py313 = pkgs.mkShell {
-          buildInputs = [
-            pkgs.cacert
-            pkgs.git
-            pkgs.gnumake
-            pkgs.openssh
-            pkgs.bash
-            pkgs.bash-completion
-
-            python313Env
-          ];
-          shellHook = ''
-            echo "Python 3.13 environment"
-          '';
+        devShells.py313 = mkDevShell {
+          pythonEnvs = [ python313Env ];
         };
 
-        devShells.pypy310 = pkgs.mkShell {
-          buildInputs = [
-            pkgs.which
-            pkgs.cacert
-            pkgs.git
-            pkgs.gnumake
-            pkgs.openssh
-            pkgs.bash
-            pkgs.bash-completion
+        devShells.py314 = mkDevShell {
+          pythonEnvs = [ python314Env ];
+        };
 
-            pypy310Env
-          ];
-          shellHook = ''
-            echo "PyPy 3.10 environment"
-          '';
+        devShells.py3 = mkDevShell {
+          pythonEnvs = [ python3Env ];
+        };
+
+        devShells.pypy310 = mkDevShell {
+          pythonEnvs = [ pypy310Env ];
+        };
+
+        devShells.pypy3 = mkDevShell {
+          pythonEnvs = [ pypy3Env ];
         };
       });
 }
