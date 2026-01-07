@@ -31,6 +31,7 @@ from .verification	import (
     into_Timestamp, into_Duration,
     authoring, issue, verify, load, load_keypairs, check, authorized,
     DKIM_pubkey, DKIMError,
+    ChaCha20Poly1305
 )
 from ..			import ed25519
 
@@ -149,7 +150,7 @@ def test_KeypairPlaintext_smoke():
     assert str( kp_c1 ) == str( kp_p4 )
 
 
-@pytest.mark.skipif( not chacha20poly1305, reason="Needs ChaCha20Poly1305" )
+@pytest.mark.skipif( ChaCha20Poly1305 is None, reason="Needs ChaCha20Poly1305" )
 def test_KeypairEncrypted_smoke():
     enduser_keypair		= authoring( seed=enduser_seed, why="from enduser seed" )
     salt			= b'\x00' * 12
@@ -250,7 +251,7 @@ def test_KeypairEncrypted_readme():
     ]
 
 
-@pytest.mark.skipif( not chacha20poly1305, reason="Needs ChaCha20Poly1305" )
+@pytest.mark.skipif( ChaCha20Poly1305 is None, reason="Needs ChaCha20Poly1305" )
 def test_KeypairEncrypted_load_keypairs():
     enduser_keypair		= authoring( seed=enduser_seed, why="from enduser seed" )
     # load just the one encrypted crypto-keypair (no glob wildcard on extension)

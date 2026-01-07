@@ -28,3 +28,4 @@ licensing.access
 licensing.db
 *.aux
 *.toc
+flake.lock

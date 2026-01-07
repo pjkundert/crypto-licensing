@@ -52,11 +52,39 @@ from ..misc		import (
 # reference implementation
 from .. import ed25519
 
-# Optionally, we can provide ChaCha20Poly1305 to support KeypairEncrypted
+# Optionally, we can provide ChaCha20Poly1305 to support KeypairEncrypted, either from pycryptodome
+# or chacha20poly1305.  If not available, ChaCha20Poly1305 is None.
 try:
-    from chacha20poly1305 import ChaCha20Poly1305
+    from Crypto.Cipher import ChaCha20_Poly1305
+
+    class ChaCha20Poly1305:
+        """ChaCha20-Poly1305 AEAD cipher using pycryptodome.
+
+        Provides encrypt/decrypt methods that take a nonce parameter, compatible with
+        the original chacha20poly1305 module API.
+        """
+        def __init__(self, key):
+            self.key = key
+
+        def encrypt(self, nonce, plaintext):
+            """Encrypt plaintext with nonce, returning ciphertext with authentication tag appended."""
+            cipher = ChaCha20_Poly1305.new(key=self.key, nonce=nonce)
+            ciphertext, tag = cipher.encrypt_and_digest(bytes(plaintext))
+            return ciphertext + tag
+
+        def decrypt(self, nonce, ciphertext):
+            """Decrypt ciphertext (with appended tag) using nonce, verifying authentication."""
+            cipher = ChaCha20_Poly1305.new(key=self.key, nonce=nonce)
+            # ChaCha20-Poly1305 uses a 16-byte authentication tag
+            actual_ciphertext = bytes(ciphertext[:-16])
+            tag = bytes(ciphertext[-16:])
+            return cipher.decrypt_and_verify(actual_ciphertext, tag)
 except ImportError:
-    pass
+    try:
+        from chacha20poly1305 import ChaCha20Poly1305
+    except ImportError:
+        ChaCha20Poly1304 = None
+
 
 __author__                      = "Perry Kundert"
 __email__                       = "perry@dominionrnd.com"
@@ -2728,7 +2756,7 @@ def load_keypairs(
             "vk":"qZERnjDZZTmnDNNJg90AcUJZ+LYKIWO9t0jz/AzwNsk="
         }
 
-    384-bit ChaCha20Poly1503-Encrypted seed (ya, don't use a non-random salt...):
+    384-bit ChaCha20Poly1305-Encrypted seed (ya, don't use a non-random salt...):
         {
             "salt":"000000000000000000000000",
             "ciphertext":"d211f72ba97e9cdb68d864e362935a5170383e70ea10e2307118c6d955b814918ad7e28415e2bfe66a5b34dddf12d275"

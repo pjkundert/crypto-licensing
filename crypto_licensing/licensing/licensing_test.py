@@ -29,11 +29,8 @@ try:
     from cpppo.server import network		# network.bench
 except ImportError:
     network			= None
-try:
-    import chacha20poly1305
-except ImportError:
-    chacha20poly1305		= None
 
+from .verification import ChaCha20Poly1305
 
 log				= logging.getLogger( "lic.svr")
 
@@ -205,7 +202,7 @@ def licensing_bench():
     not licensing_main
     or not web
     or not network
-    or not chacha20poly1305,
+    or ChaCha20Poly1305 is None,
     reason="Licensing server needs web.py, chacha20poly1305, cpppo"
 )
 def test_licensing_bench( tmp_path ):

@@ -2,16 +2,18 @@
 # GNU 'make' file
 #
 
+SHELL		= /bin/bash
 
-# PY[23] is the target Python interpreter.  It must have pytest installed.
+ALL		= server
+
+
+# PY3 is the target Python interpreter.  It must have pytest installed.
 # The python2 assumes a Nix supplied python2, and that all Python2 "pip"
 # modules have been installed locally.  To test Python2, install Nix and try:
 #
 #     make nix-install2
 #     make nix-test2
 #
-PY2		?= PIP_USER=1 PYTHONPATH=~/.local/lib/python2.7/site-packages/ python2
-PY2_V	= $(shell $(PY2) -c "import sys; print('-'.join((next(iter(filter(None,sys.executable.split('/')))),sys.platform,sys.subversion[0].lower(),''.join(map(str,sys.version_info[:2])))))"  )
 PY3		?= python3
 PY3_V		= $(shell $(PY3) -c "import sys; print('-'.join((next(iter(filter(None,sys.executable.split('/')))),sys.platform,sys.implementation.cache_tag)))" 2>/dev/null )
 
@@ -32,10 +34,9 @@ VENV_OPTS	=
 NIX_OPTS	?= # --pure
 
 # To see all pytest output, uncomment --capture=no ...
-PYTESTOPTS	= # --capture=no --log-cli-level=23 # INFO  # DEBUG # 23 == DETAIL # 25 == NORMAL
+PYTESTOPTS	= -v # --capture=no --log-cli-level=23 # INFO  # DEBUG # 23 == DETAIL # 25 == NORMAL
 
 PY3TEST		= TZ=$(TZ) $(PY3) -m pytest $(PYTESTOPTS)
-PY2TEST		= TZ=$(TZ) $(PY2) -m pytest $(PYTESTOPTS)
 
 .PHONY: all test clean build install wheel FORCE
 all:			help
@@ -50,7 +51,7 @@ help:
 	@echo
 	@echo "  nix-venv               Create and/or start Nix-supplied Python virtual env"
 	@echo "  nix-venv-test          Run the 'make test' target within the Nix Python venv"
-	@echo "  TARGET=py313 nix-...   Use a Python 3.13 Nix environment for the remaining targets"
+	@echo "  TARGET=py313 make nix-...     Use a Python 3.13 Nix environment for the remaining targets"
 
 #
 # nix-...:
@@ -74,21 +75,16 @@ nix-%:
 #
 # test...:	Perform Unit Tests
 #
-#     Assumes that the requirements.txt has been installed in the target Python environment.  This
+#     Assumes that the requirements have been installed in the target Python environment.  This
 # is probably best accomplished by first creating/activating a venv, and then running the test:
 #
-#     $ make nix-venv-activate
+#     $ make nix-venv
 #     (crypto-licensing-4.0.0) [perry@Perrys-MBP crypto-licensing (feature-py-3.12)]$ make test
 #     make[1]: Entering directory '/Users/perry/src/crypto-licensing'
 #     ...
 #
-test:				test3
-test2:
-	$(PY2TEST)
-test3:
+test:	# install-all  # web.py server tests are unreliable
 	$(PY3TEST)
-test23:				test2 test3
-
 
 doctest:
 	$(PY3TEST) --doctest-modules
@@ -121,7 +117,7 @@ $(VENV):
 	@echo; echo "*** Building $@ VirtualEnv..."
 	@rm -rf $@ && $(PY3) -m venv $(VENV_OPTS) $@ && sed -i -e '1s:^:. $$HOME/.bashrc\n:' $@/bin/activate \
 	    && source $@/bin/activate \
-	    && make install-dev install
+	    && make install-tests install-dev install
 
 #
 # Bootstrap a License for a product, and a sub-License issue to an end-user of that product
@@ -284,32 +280,23 @@ deps:		$(TXT)
 WHEEL		= dist/crypto_licensing-$(VERSION)-py3-none-any.whl
 
 $(WHEEL):	$(TXT) $(PYS) install-dev
-	$(PY3) -m pip install -r requirements-dev.txt
-	$(PY3) -m build .
+	$(PY3) -m build
 	@ls -last dist
 
-.PHONY: wheel build2 build23 build install2 install3 install23 install install-dev
-wheel:		$(WHEEL)
+.PHONY: wheel build install
+wheel:		install-dev $(WHEEL)
 
-build3:		wheel
-
-build23:	build3
-
-build: 		build3
+build: 		wheel
 
 
-install2:
-	$(PY2) setup.py install
+install:	$(WHEEL) FORCE
+	$(PY3) -m pip install --no-user --force-reinstall $<
 
-install3:	$(WHEEL) FORCE
-	$(PY3) -m pip install --force-reinstall $<
+install-all:		$(WHEEL) FORCE
+	$(PY3) -m pip install --no-user --force-reinstall $<[$(ALL)]
 
-install23:	install2 install3
-
-install:	install3
-
-install-%:  # ...-dev, -tests
-	$(PY3) -m pip install --upgrade -r requirements-$*.txt
+install-%: # ...-dev, -tests
+	$(PY3) -m pip install --no-user --upgrade .[$*]
 
 
 clean:
@@ -317,10 +304,7 @@ clean:
 
 
 # Run only tests with a prefix containing the target string, eg test-blah
-unit2-%:
-	$(PY2TEST) -k $*
-	@echo "unit2-$*: Python 2 Tests completed"
-unit-% unit3-%:
+unit-%:
 	$(PY3TEST) -k $*
 	@echo "unit2-$*: Python 3 Tests completed"
 
