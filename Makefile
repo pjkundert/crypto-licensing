@@ -83,7 +83,7 @@ nix-%:
 #     make[1]: Entering directory '/Users/perry/src/crypto-licensing'
 #     ...
 #
-test:	install-all
+test:	# install-all  # web.py server tests are unreliable
 	$(PY3TEST)
 
 doctest:

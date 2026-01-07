@@ -40,7 +40,7 @@ dependencies = [
 
 [project.optional-dependencies]
 server = [
-    "web.py-update		>=0.75",
+    "web.py-update		>=0.75.1",
     "wsgilog			>=0.3",
     "legacy-cgi			>=2.6	; python_version >= \"3.13\"",
     "cpppo			>=5.0.0",

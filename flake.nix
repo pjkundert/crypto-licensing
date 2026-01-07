@@ -23,6 +23,7 @@
         python312Env = mkPythonEnv pkgs.python312;
         python313Env = mkPythonEnv pkgs.python313;
         python314Env = mkPythonEnv pkgs.python314;
+        python315Env = mkPythonEnv pkgs.python315;
         python3Env   = mkPythonEnv pkgs.python3;
         pypy310Env   = mkPythonEnv pkgs.pypy310;
         pypy3Env     = mkPythonEnv pkgs.pypy3;
@@ -87,6 +88,10 @@
 
         devShells.py314 = mkDevShell {
           pythonEnvs = [ python314Env ];
+        };
+
+        devShells.py315 = mkDevShell {
+          pythonEnvs = [ python315Env ];
         };
 
         devShells.py3 = mkDevShell {
