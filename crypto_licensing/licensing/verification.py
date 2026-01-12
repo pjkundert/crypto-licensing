@@ -17,7 +17,6 @@
 #
 
 from __future__ import absolute_import, print_function, division
-from future.utils import raise_from
 
 import codecs
 import copy
@@ -162,14 +161,14 @@ def DKIM_pubkey( dkim, v="DKIM1", k="Ed25519" ):
         assert dkim_rec['k'] == dkim_valid['k']( k ), \
             "Failed to find {!r} public key; instead was of type {!r}".format( k, dkim_rec['k'] )
     except Exception as exc:
-        raise_from( DKIMError(
+        raise DKIMError(
             "Failed to locate {k} public key in TXT {v} record {dkim}: {exc}".format(
                 k	= k,
                 v	= v,
                 dkim	= dkim,
                 exc	= exc,
             )
-        ), exc )
+        ) from exc
     return dkim_rec['p']
 
 
@@ -334,7 +333,7 @@ def into_JSON( thing, indent=None, default=None, prefix=None ):
             if default:
                 return default( x )
             log.warning("Failed to JSON serialize {!r}: {}".format( x, exc ))
-            raise exc
+            raise
     # Unfortunately, Python2 json.dumps w/ indent emits trailing whitespace after "," making
     # tests fail.  Make the JSON separators whitespace-free, so the only difference between the
     # signed serialization and an pretty-printed indented serialization is the presence of
@@ -450,7 +449,7 @@ def machine_UUIDv4( machine_id_path=None ):
         machine_id		= into_bytes( machine_id, ('hex', ) )
         assert len( machine_id ) == 16
     except Exception as exc:
-        raise_from( RuntimeError( "Invalid Machine ID found: {!r}: {}".format( machine_id, exc )), exc )
+        raise RuntimeError( "Invalid Machine ID found: {!r}: {}".format( machine_id, exc )) from exc
     machine_id			= bytearray( machine_id )
     machine_id[6]	       &= 0x0F
     machine_id[6]	       |= 0x40
@@ -561,9 +560,8 @@ class Serializable( object ):
                             exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
                         raise
             for key in vars_seq:
-                if key[0] == '_':  # ignore hidden _... vars, eg. _from.  Except under TRACe
-                    if not log.isEnabledFor( logging.TRACE ):
-                        continue
+                if key[0] == '_':  # ignore hidden _... vars, eg. _from.
+                    continue
                 yield key, getattr( self, key )
 
     def __copy__( self ):
@@ -718,7 +716,13 @@ class Serializable( object ):
             "Missing required {}".format(
                 ', '.join( () if pubkey else ('public key',)
                            + () if signature else ('signature',) ))
-        return ed25519.crypto_sign_open( signature + self.serialize(), pubkey )
+        serialization		= self.serialize()
+        try:
+            verified		= ed25519.crypto_sign_open( signature + serialization, pubkey )
+            return verified
+        except Exception as exc:
+            log.debug( f"License serialization w/ signature {into_b64( signature )} not signed by pubkey: {into_b64( pubkey )}: {serialization}" )
+            raise
 
     def digest( self, encoding=None, decoding=None ):
         """The SHA-256 hash of the serialization, as 32 bytes.  Optionally, encode w/ a named codec,
@@ -1673,7 +1677,7 @@ class License( Serializable ):
         try:
             self.timespan	= into_Timespan( timespan )
         except Exception as exc:
-            raise LicenseIncompatibility( "License timespan invalid: {exc}".format( exc=exc ))
+            raise LicenseIncompatibility( "License timespan invalid: {exc}".format( exc=exc )) from exc
 
         # Remember our License's Grant of capabilities.  Any License may grant anything it wishes;
         # however, the Licensee's software keeps track of the "heritage" of each Grant; if it didn't
@@ -1684,7 +1688,7 @@ class License( Serializable ):
         try:
             self.grant		= into_Grant( grant )
         except Exception as exc:
-            raise LicenseIncompatibility( "License grant invalid: {exc}".format( exc=exc ))
+            raise LicenseIncompatibility( "License grant invalid: {exc}".format( exc=exc )) from exc
 
         # Reconstitute LicenseSigned provenance from any dicts provided
         self.dependencies	= None
@@ -1790,19 +1794,24 @@ class License( Serializable ):
             try:
                 super( License, self ).verify( pubkey=self.author.pubkey, signature=signature )
             except Exception as exc:
+                log.info( f"License not signed by Author: {self}" )
                 raise LicenseIncompatibility(
                     "License for {auth}'s {prod!r}: signature mismatch: {sig!r}; {exc}".format(
                         auth	= self.author.name,
                         prod	= self.author.product,
                         sig	= into_b64( signature ),
                         exc	= exc,
-                    ))
+                    )) from exc
 
         # Verify any License dependencies are valid; signed w/ DKIM specified key, License OK.  When
         # verifying License dependencies, we don't supply the constraints and decline inclusion of
         # dependencies, because we're not interested in sub-Licensing these Licenses, only verifying
         # them.  If a License dependency specifies a client, make certain it matches the issued
         # License's author; otherwise, any author is allowed.
+
+        # This is where a client's self-signed License is validated; unless the License.dependencies
+        # Licenses are "anonymous" (allow *any* client) or are specifically issued to the Keypair
+        # used to sign (they allow *this* client), the License isn't valid.
 
         # TODO: Issuing a License that allows "anonymous" clients is somewhat dangerous, as the
         # entire package of License capabilities can be acquired by anyone.  When we validate
@@ -1830,7 +1839,7 @@ class License( Serializable ):
                         dep_auth	= prov.license.author.name,
                         dep_prod	= prov.license.author.product,
                         exc		= exc,
-                    ))
+                    )) from exc
 
         # Enforce all constraints, returning a dict suitable for creating a specialized License, if
         # a signature was provided; if not, we cannot produce a specialized sub-License, and must
@@ -1862,7 +1871,7 @@ class License( Serializable ):
                     auth	= self.author.name,
                     prod	= self.author.product,
                     exc		= exc,
-                ))
+                )) from exc
         else:
             # Finally, if a timespan constraint w/ either start or length was supplied, update it
             # with the computed timespan of start/length constraints overlapped with all
@@ -2089,7 +2098,7 @@ class LicenseSigned( Serializable ):
         """
         if isinstance( license, type_str_base ):
             license		= json.loads( license )  # Deserialize License, if necessary
-        assert isinstance( license, (License, dict) ), \
+        assert isinstance( license, (License, dict) ) and not isinstance( license, LicenseSigned ), \
             "Require a License or its serialization dict, not a {!r}".format( license )
         if isinstance( license, dict ):
             license		= License( confirm=confirm, machine_id_path=machine_id_path, **license )
@@ -2312,7 +2321,7 @@ class KeypairEncrypted( Serializable ):
                 try:
                     ed25519.crypto_sign_open( vk_signature + vk, vk )
                 except Exception as exc:
-                    raise_from( ValueError( "Failed to verify Ed25519 pubkey {} signature".format( into_b64( vk ))), exc )
+                    raise ValueError( "Failed to verify Ed25519 pubkey {} signature".format( into_b64( vk ))) from exc
             elif sk:
                 # We have both vk and sk, either supplied or deduced, but no vk_signature.  Produce it.
                 vk_signature	= ed25519.crypto_sign( vk, sk )[:64]
@@ -2350,9 +2359,9 @@ class KeypairEncrypted( Serializable ):
         ciphertext		= bytearray( self.ciphertext )
         try:
             plaintext		= bytes( cipher.decrypt( nonce, ciphertext ))
-        except Exception:
+        except Exception as exc:
             raise KeypairCredentialError(
-                "Failed to decrypt ChaCha20Poly1305-encrypted Keypair w/ {}'s credentials".format( username ))
+                "Failed to decrypt ChaCha20Poly1305-encrypted Keypair w/ {}'s credentials".format( username )) from exc
         keypair			= authoring( seed=plaintext, why="decrypted w/ {}'s credentials".format( username ))
         return keypair
 
@@ -2395,7 +2404,7 @@ def save_keypair(
                 keypair.save( f )  # keypair._from preserves f.name
         except Exception as exc:
             log.detail( "Writing {why} Keypair to {path} failed: {exc}".format( why=why, path=f.name, exc=exc ))
-            raise NotRegistered( "Failed to register {why} Keypair: {exc}".format( why=why, exc=exc ))
+            raise NotRegistered( "Failed to register {why} Keypair: {exc}".format( why=why, exc=exc )) from exc
         else:
             log.normal( "Wrote {why} Keypair to {path}: {pubkey}".format( why=why, path=keypair._from, pubkey=keypair['vk'] ))
             break
@@ -2544,7 +2553,7 @@ def save(
                 provenance.save( f )  # LicenseSigned._from preserves f.name
         except Exception as exc:
             log.detail( "Writing {why} License to {path} failed: {exc}".format( why=why, path=f.name, exc=exc ))
-            raise NotLicensed( "Failed to save {why} License: {exc}".format( why=why, exc=exc ))
+            raise NotLicensed( "Failed to save {why} License: {exc}".format( why=why, exc=exc )) from exc
         else:
             log.normal( "Wrote {why} License to {path}".format( why=why, path=provenance._from ))
             break
@@ -2601,7 +2610,7 @@ def license(
             why		= why,
             exc		= ''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.DEBUG ) else exc,
         ))
-        raise NotLicensed( "Failed to save a new License: {exc}".format( exc=exc ))
+        raise NotLicensed( "Failed to save a new License: {exc}".format( exc=exc )) from exc
     else:
         log.info( "Created License provenance {}".format( provenance ))
 
@@ -2796,9 +2805,9 @@ def load_keypairs(
             try:
                 encrypted	= KeypairEncrypted( username=username, password=password, **keypair_dict )
             except TypeError as exc:  # Incorrect arguments, ...
-                raise_from( TypeError( "Keypair w/ keywords {} probably isn't a KeypairEncrypted: {}".format(
+                raise TypeError( "Keypair w/ keywords {} probably isn't a KeypairEncrypted: {}".format(
                     ', '.join( keypair_dict ), exc
-                )), exc )
+                )) from exc
             keypair		= encrypted.into_keypair( username=username, password=password )
             log.info( "Recover Ed25519 KeypairEncrypted w/ Public key: {} (from {}) w/ credentials {} / {}".format(
                 into_b64( keypair.vk ), f_name, username, '*' * len( password )))
@@ -2832,9 +2841,9 @@ def load_keypairs(
             try:
                 plaintext	= KeypairPlaintext( **keypair_dict )
             except TypeError as exc:
-                raise_from( RuntimeError( "Keypair file w/ keywords {} probably isn't a KeypairPlaintext".format(
+                raise RuntimeError( "Keypair file w/ keywords {} probably isn't a KeypairPlaintext".format(
                     ', '.join( keypair_dict )
-                )), exc )
+                )) from exc
             keypair		= plaintext.into_keypair()
             log.isEnabledFor( logging.DEBUG ) and log.debug(
                 "Recover Ed25519 KeypairPlaintext w/ Public key: {} (from {})".format(
@@ -2931,9 +2940,9 @@ def check_nolog(
     find it with load_keypairs on a subsequent call), or pass it in via keypairs.  We will load all
     available Keypairs/Licenses, and attempt to return any Licenses that are verified for any
     Keypair (ie. were issued by the Keypair, or could be sub-licensed by the Keypair, which we will
-    do automatically, so the Licensee doesn't actually need to save their signed LicenseProvenance
+    do automatically, so the Licensee doesn't actually need to save their LicenseSigned provenance
     -- unless they wish to avoid the need to be online and "confirm" the validity of the
-    sub-Licenses in the future; they can save the generated LicenseProvenance, and trust their
+    sub-Licenses in the future; they can save the generated LicenseSigned, and trust their
     signature to prove that, in the past, they agreed that the sub-License(s) were verified).
 
     Agent signing authority is usually machine- or username-specific: a License to run a program on
@@ -2945,7 +2954,7 @@ def check_nolog(
     However, if the issued License is specific to the client's Keypair (or the License doesn't
     specify a client public key at all), they can load their Keypair (by entering credentials), and
     re-sub-license their License for the new machine.  Thus, we'll automatically do this here, w/
-    proper username/password, and return the newly sub-licensed LicenseProvenance.
+    proper username/password, and return the newly sub-licensed LicenseSigned provenance.
 
     We assume that any Keypair we can load (ie. we have the username/password to access) must imply
     a signing authority.  So, don't keep generic license keypairs (ie. those used to author
@@ -3002,8 +3011,15 @@ def check_nolog(
         prov,reasons		= None,[]        # Why didn't any Licenses qualify?
         for lic_path,lic in licenses:
             # Was this license issued by our Keypair Agent as the author?  This means that one was
-            # issued by some author, with our Keypair Agent as a client (or no client spcecified),
-            # and we (previously) issued and saved it -- we sub-licensed it.
+            # issued by some author, with our Keypair Agent as a client (or no client specified),
+            # and we (previously) issued and saved it -- we sub-licensed it.  All this means is that
+            # (at some point) we had access to the un-encrypted Keypair, and we've issued ourselves
+            # this License, claiming it's valid for us to use; for example, when we installed the
+            # software on this machine and the client was sitting at the keyboard or otherwise
+            # authorizing the installation, and was present to make the Keypair credentials
+            # available.
+            #
+            # That claim must be checked by the software's author, in its license validation code...
             log.trace( "Evaluate {lic_path:32} / {key_path:32} w/ constrints {constraints!r}".format(
                 lic_path	= os.path.basename( lic_path ),
                 key_path	= os.path.basename( key_path or '(unknown)' ),
@@ -3017,7 +3033,7 @@ def check_nolog(
                     **( constraints or {} )
                 )
             except Exception as exc:
-                log.info( "Checked  {lic_path:32} / {key_path:32} ({pubkey:64}): {exc}".format(
+                log.info( "Checked  {lic_path:32} / {key_path:32} ({pubkey:64}); License is not sub-licensed to this Keypair: {exc}".format(
                     lic_path	= os.path.basename( lic_path ),
                     key_path	= os.path.basename( key_path or '(unknown)' ),
                     pubkey	= into_b64( keypair.vk ),
@@ -3041,7 +3057,7 @@ def check_nolog(
                     **( constraints or {} )
                 )
             except Exception as exc:
-                log.info( "Verify  {lic_path:32} / {key_path:32} ({pubkey:64}): {exc}".format(
+                log.info( "Verify  {lic_path:32} / {key_path:32} ({pubkey:64}); License is not sub-licensable: {exc}".format(
                     lic_path	= os.path.basename( lic_path ),
                     key_path	= os.path.basename( key_path or '(unknown)' ),
                     pubkey	= into_b64( keypair.vk ),
@@ -3104,8 +3120,7 @@ def check_nolog(
 check			= key_lic_sequence_logger( check_nolog )
 
 
-@key_lic_sequence_logger
-def authorized(
+def authorized_nolog(
     author,					# Details of the author's product we're licensing
     client		= None,			# ..and the intended specific client Agent
     username		= None,			# The credentials for our client Agent's Keypair
@@ -3120,14 +3135,14 @@ def authorized(
     basename		= None,			# A specific basename to use; otherwise client/author.servicekey
     **kwds  # eg. {base,file}name, package, extra=["..."], reverse_save, other open() args; see config_open
 ):
-    """If possible, load and verify the client Agent's KeyPair (creating one if necessary).  Looks
-    first for Keypairs/Licenses under the specified basename; defaults to client.servicekey, and
-    then looks in author.servicekey.  Any Keypairs collected are used in subsequent searches, to see
-    if a License issued by the author or to the client can be refined and issued on behalf of the
-    named agent.
+    """If possible, load and verify the client Agent's KeyPair (creating one if 'registering').
+    Looks first for Keypairs/Licenses under the specified basename; defaults to client.servicekey,
+    and then looks in author.servicekey.  Any Keypairs collected are used in subsequent searches, to
+    see if a License issued by the author or to the client can be refined and issued on behalf of
+    the named client agent.
 
     All Keypairs found are assumed to be client Agent keypairs useful for issuing sub-licenses: So,
-    don't store author Agent keypairs in the same directories, or using the same credentials!
+    don't store author Agent keypairs in the same directories, or using the same credentials!  
 
     Obtain any LicenseSigned provenances, and sift through them for any that authorize usage of the
     given author's domain and product, to the given client, for a certain space and time, and
@@ -3151,7 +3166,11 @@ def authorized(
 
     then the requested capability is authorized.
 
-    Otherwise, use the agent's Keypair to obtain a License for the specified remaining capability/constraints.
+    If a License is found that can be sub-licensed by a KeyPair, check_nolog will 'issue' it and
+    return it.  We can tell that it wasn't loaded because it will not have a '._from' property.  We
+    will simply return the LicenseSigned found; we can re-sublicense it again in the future, but the
+    caller may wish to save it (to avoid having to provide credentials again in the future to
+    decrypt the KeyPairEncryped).
 
     Yields the discovered sequence of KeyPair, License found, or if none found under any name,
     finally yields:
@@ -3180,7 +3199,7 @@ def authorized(
     # client Agents.  All Keypairs required to utilize a certain License must be typically found
     # under the same basename; however, we'll collect up all Keypairs found (eg. first under
     # basename, then client.servicekey, ...) for each subsequent License check... call.  Thus, we
-    # can same a specific application agent Keypair (eg. under basename="some-application"), then
+    # can save a specific application agent Keypair (eg. under basename="some-application"), then
     # find a License we saved under eg. "our-company" Agent, or (if not found), we can locate a
     # generic "authors-product" License which is sublicensable using our
     # some-application.crypto-keypair.
@@ -3329,7 +3348,7 @@ def authorized(
             else:
                 # Out of keypairs/licenses under this basename (and no more basechecks, b/c the last
                 # thing we'd get from authorized would be (None,None), and we'd have broken out
-                # above if there were more).  So, if  no Licenses collected are satisfactory , but if we
+                # above if there were more).  So, if no Licenses collected are satisfactory, but if we
                 # do have at least one Agent ID, continue as if we've just completed REGISTER, and
                 # proceed to LICENSE.  Otherwise, fall thru to REGISTERING (unless we've got more
                 # basenames to try; then loop back.)
@@ -3425,3 +3444,5 @@ def authorized(
                 keys	= len( licenses ),
                 lics	= sum( len( licenses ) for _,licenses in licenses.items() ),
             ))
+
+authorized		= key_lic_sequence_logger( authorized_nolog )

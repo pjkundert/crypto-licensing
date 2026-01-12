@@ -21,7 +21,6 @@
 """
 
 from __future__ import absolute_import, print_function, division
-from future.utils import raise_from
 
 import json
 import logging
@@ -156,6 +155,6 @@ def query( domain, record=None, provider=None, timeout=5.0 ):
             record_type		= record
         assert isinstance( record_type, DNSRecord )
     except Exception as exc:
-        raise_from( DoHError( "Invalid DNS-over-HTTPS record {!r}".format( record )), exc )
+        raise DoHError( "Invalid DNS-over-HTTPS record {!r}".format( record )) from exc
 
     return query_cached( domain, record_type, provider=provider, timeout=timeout )
