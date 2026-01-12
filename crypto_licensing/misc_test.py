@@ -1,11 +1,5 @@
 # -*- coding: utf-8 -*-
 
-from __future__ import absolute_import, print_function, division
-try:
-    from future_builtins import zip, map  # noqa: F401; Use Python 3 "lazy" zip, map
-except ImportError:
-    pass
-
 import datetime
 import json
 import logging

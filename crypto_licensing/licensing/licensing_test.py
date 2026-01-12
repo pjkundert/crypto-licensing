@@ -1,18 +1,13 @@
 # -*- coding: utf-8 -*-
 
-from __future__ import absolute_import, print_function, division, unicode_literals
-try:
-    from future_builtins import zip, map  # noqa: F401; Use Python 3 "lazy" zip, map
-except ImportError:
-    pass
-
 import json
 import logging
 import threading
 import os
 import pytest
+import reprlib
 
-from ..misc		import reprlib, urlopen
+from ..misc		import urlopen
 from ..			import licensing
 
 # If web.py or cpppo is unavailable, licensing.main cannot be used

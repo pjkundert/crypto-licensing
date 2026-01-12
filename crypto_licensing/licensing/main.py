@@ -21,8 +21,6 @@
     Implements the Crypto Licensing server
 """
 
-from __future__ import print_function, absolute_import, division
-
 import argparse
 import curses, curses.ascii, curses.panel  # noqa: E401
 import fnmatch
