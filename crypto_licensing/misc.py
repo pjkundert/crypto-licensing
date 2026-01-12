@@ -16,12 +16,6 @@
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 #
 
-from __future__ import absolute_import, print_function, division
-try:
-    from future_builtins import zip, map		# Use Python 3 "lazy" zip, map
-except ImportError:
-    pass
-
 import calendar
 import datetime
 import fnmatch
@@ -63,37 +57,10 @@ except ImportError:
         raise pytz.UnknownTimeZoneError( 'Can not find any timezone configuration' )
 
 
-#
-# Python2/3 Compatibility Types
-#
 from numbers		import Number
-type_str_base			= basestring if sys.version_info[0] < 3 else str  # noqa: F821
-type_num_base			= Number
 
-try:
-    import reprlib					# noqa: F401
-except ImportError:
-    import repr as reprlib				# noqa: F401
-
-try:
-    xrange(0,1)
-except NameError:
-    xrange 			= range
-
-try:
-    unicode			= unicode
-except NameError:
-    unicode			= str
-
-try:
-    from urllib		import urlencode, unquote       # noqa: F401
-except ImportError:
-    from urllib.parse	import urlencode, unquote       # noqa: F401
-
-try:  # Python2
-    from urllib2	import urlopen, Request		# noqa: F401
-except ImportError:  # Python3
-    from urllib.request	import urlopen, Request		# noqa: F401
+from urllib.parse	import urlencode, unquote       # noqa: F401
+from urllib.request	import urlopen, Request		# noqa: F401
 
 try:
     import pathlib					# noqa: F401
@@ -109,7 +76,7 @@ except ImportError:
 
     DEFAULT_ENTROPY = 32  # number of bytes to return by default
 
-    # Python2/3 support; fall back to os.urandom
+    # Python 3 <3.6 support; fall back to os.urandom
     _randbytes = getattr( _sysrand, 'randbytes', os.urandom )
 
     def token_bytes(nbytes=None):
@@ -124,6 +91,12 @@ except ImportError:
         if nbytes is None:
             nbytes = DEFAULT_ENTROPY
         return _randbytes(nbytes)
+
+
+type_str_base			= str
+type_num_base			= Number
+
+unicode				= str
 
 
 def is_mapping( thing ):
@@ -218,11 +191,8 @@ def change_function( function, **kwds ):
 
 
 #
-# Add some new levels, w/ minimal functionality.  In Python 2, we cannot (easily) add new
-# eg. logging.boo functions for logging level BOO, because logging uses an extremely fragile
-# mechanism for finding the first non-logging function stack frame.  So, we must use .log(
-# logging.BOO, ... ) with the new levels, unless we change the custom logging functions' co_filename
-# data...  We've tried to be consistent w/ cpppo's logging levels.
+# Add some new custom logging levels with minimal functionality.
+# We've tried to be consistent w/ cpppo's logging levels.
 #
 
 #      .FATAL 		       == 50
@@ -239,13 +209,9 @@ logging.addLevelName( logging.NORMAL,	'NORMAL' )
 logging.addLevelName( logging.DETAIL,	'DETAIL' )
 logging.addLevelName( logging.TRACE,	'TRACE' )
 
-# We'll use the "simple" method of creating custom named log functions for the new levels under
-# Python 3.  These do *not* correctly report the caller's file/line under Python 2, because the
-# logging.Logger.findCaller looks at each call-stack function's f_code.co_filename to see if its a
-# function/method of logging!  So, if you see incorrect file/line reported by these methods, that's
-# why.  In Python3.?, logging.Logger.findCaller skips stacklevel=1 (this custom log function!),
-# avoiding the problem.  However, Python2.7 still examines the <function>.f_code.co_filename, so we
-# have to carefully fix it to match logging._srcfile.
+# We'll use functools.partialmethod (Python 3.4+) if available for creating custom named log
+# functions for the new levels. For older Python 3 versions (<3.4), we fall back to manually
+# defining the methods and fixing their co_filename to match logging._srcfile.
 if hasattr( functools, 'partialmethod' ):
     logging.Logger.normal		= functools.partialmethod( logging.Logger.log, logging.NORMAL )
     logging.Logger.detail		= functools.partialmethod( logging.Logger.log, logging.DETAIL )
@@ -333,11 +299,11 @@ def log_args( func ):
 #
 # misc.timer
 #
-# Select platform appropriate timer function
+# Select platform appropriate timer function (time.time for Python 3)
 #
 if sys.platform == 'win32' and sys.version_info[0:2] < (3,8):
     # On Windows (before Python 3.8), the best timer is time.clock
-    timer 			= time.clock
+    timer			= time.clock
 else:
     # On most other platforms the best timer is time.time
     timer			= time.time
@@ -811,10 +777,7 @@ class Timestamp( datetime.datetime ):
     # Comparisons.  Always equivalent to lexicographically, in UTC to 3 decimal places.  However,
     # we'll compare numerically, to avoid having to render/compare strings; if the <self>.value is
     # within _precision (default: 3) / _epsilon (default: 0.001) of <rhs>.value, it is considered
-    # equal.  Pypy2 re-implements the pytz library w/ some comparisons against raw
-    # datetime.datetimes, so we have to support them directly; they have no .timestamp().  However,
-    # pypy2 has other issues, so we don't support it -- it is an optional optimization for Python2
-    # code, anyway...
+    # equal.  Some datetime implementations may not have .timestamp(), so we provide a fallback.
     def __lt__( self, rhs ):
         assert isinstance( rhs, (Timestamp, datetime.datetime) ), \
             "Expected Timestamp/datetime, got: {!r}".format( rhs )
@@ -910,10 +873,7 @@ config_paths.PATHS		= [
 ]
 
 
-try:
-    ConfigNotFoundError		= FileNotFoundError
-except NameError:
-    ConfigNotFoundError		= IOError		# Python2 compatibility
+ConfigNotFoundError		= FileNotFoundError
 
 
 class ConfigFoundError( KeyError ):
@@ -923,9 +883,8 @@ class ConfigFoundError( KeyError ):
 def config_open( name, mode=None, extra=None, skip=None, reverse=None, overwrite=None, **kwds ):
     """Find and open all glob-matched file name(s) found on the standard or provided configuration
     file paths (plus any extra), for reading in most specific to most general order (or in 'reverse'
-    for writing).  Yield the open file(s), or raise a ConfigNotFoundError (a FileNotFoundError or
-    IOError in Python3/2 if no matching file(s) at all were found, to be somewhat consistent with a
-    raw open() call).
+    for writing).  Yield the open file(s), or raise a ConfigNotFoundError (a FileNotFoundError)
+    if no matching file(s) at all were found, to be somewhat consistent with a raw open() call.
 
     If an absolute path is provided, only it (or those matching any glob pattern provided) are
     traversed; otherwise, we search the config_paths + extras.
@@ -1035,7 +994,7 @@ def deduce_name( basename=None, extension=None, filename=None, package=None, def
 def config_open_deduced( basename=None, extension=None, filename=None, package=None, **kwds ):
     """Find any glob-matched configuration file(s), optionally deducing the basename from the provided
     __file__ filename or __package__ package name, returning the open file or raising a ConfigNotFoundError
-    (a FileNotFoundError, or IOError in Python2).
+    (a FileNotFoundError).
 
     If writing, will default to not overwrite an existing file; will raise a ConfigFoundError instead.
     """

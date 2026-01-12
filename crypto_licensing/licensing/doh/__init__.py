@@ -20,8 +20,6 @@
     Implements a simple DNS-over-HTTPS (DoH) query client, via requests.
 """
 
-from __future__ import absolute_import, print_function, division
-
 import json
 import logging
 

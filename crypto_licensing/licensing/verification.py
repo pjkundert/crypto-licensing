@@ -16,8 +16,6 @@
 # A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 #
 
-from __future__ import absolute_import, print_function, division
-
 import codecs
 import copy
 import datetime
@@ -720,7 +718,7 @@ class Serializable( object ):
         try:
             verified		= ed25519.crypto_sign_open( signature + serialization, pubkey )
             return verified
-        except Exception as exc:
+        except Exception:
             log.debug( f"License serialization w/ signature {into_b64( signature )} not signed by pubkey: {into_b64( pubkey )}: {serialization}" )
             raise
 
@@ -3142,7 +3140,7 @@ def authorized_nolog(
     the named client agent.
 
     All Keypairs found are assumed to be client Agent keypairs useful for issuing sub-licenses: So,
-    don't store author Agent keypairs in the same directories, or using the same credentials!  
+    don't store author Agent keypairs in the same directories, or using the same credentials!
 
     Obtain any LicenseSigned provenances, and sift through them for any that authorize usage of the
     given author's domain and product, to the given client, for a certain space and time, and
@@ -3444,5 +3442,6 @@ def authorized_nolog(
                 keys	= len( licenses ),
                 lics	= sum( len( licenses ) for _,licenses in licenses.items() ),
             ))
+
 
 authorized		= key_lic_sequence_logger( authorized_nolog )
