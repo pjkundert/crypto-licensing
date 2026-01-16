@@ -107,7 +107,7 @@ signature=kDCDoWJ2xDcIg5HicihQeJBxbo8LK%2BDCI2FPogQD2q4Slxylyq7G5xuEaV%2BWa6STD7
 
 
 def licensing_cli( number, tests=None, address=None, timeout=client_timeout ):
-    """Makes a series of HTTP requests to the licensing server, tbesting the response.
+    """Makes a series of HTTP requests to the licensing server, testing the response.
 
     """
     log.info( "Client number={}; starting".format( number ))

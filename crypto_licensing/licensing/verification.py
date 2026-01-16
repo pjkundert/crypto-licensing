@@ -17,13 +17,10 @@
 #
 
 import codecs
-import copy
-import datetime
 import hashlib
 import json
 import logging
 import os
-import struct
 import sys
 import traceback
 import uuid
@@ -37,22 +34,29 @@ from . 			import doh
 from .defaults		import (
     DISTRIBUTION, LICPATTERN, LICEXTENSION, KEYPATTERN, KEYEXTENSION,
 )
+from .errors		import (
+    LicenseIncompatibility, DKIMError, NotRegistered, NotLicensed, LicenseDuplicated,
+)
+from .grants		import (
+    Grant, into_Grant, Timespan, into_Timespan, into_str_UTC, into_str_LOC,
+    overlap_intersect,
+)
+from .serializable	import Serializable
+
 from ..misc		import (
-    type_str_base, type_num_base, urlencode,
-    parse_datetime, parse_seconds, Timestamp, Duration,
-    config_open_deduced, ConfigFoundError,
-    token_bytes, is_mapping, is_listlike,
+    type_str_base, urlencode, into_str, into_bytes, into_hex, into_b64,
+    config_open_deduced, ConfigFoundError, token_bytes,
 )
 
 # Get Ed25519 support. Try a globally installed ed25519ll possibly with a CTypes binding, Otherwise,
 # try our local Python-only ed25519ll derivation, or fall back to the very slow D.J.Bernstein Python
 # reference implementation
-from .. import ed25519
+from ..			import ed25519
 
 # Optionally, we can provide ChaCha20Poly1305 to support KeypairEncrypted, either from pycryptodome
 # or chacha20poly1305.  If not available, ChaCha20Poly1305 is None.
 try:
-    from Crypto.Cipher import ChaCha20_Poly1305
+    from Crypto.Cipher	import ChaCha20_Poly1305
 
     class ChaCha20Poly1305:
         """ChaCha20-Poly1305 AEAD cipher using pycryptodome.
@@ -90,48 +94,6 @@ __license__                     = "Dual License: GPLv3 (or later) and Commercial
 
 
 log				= logging.getLogger( "licensing" )
-
-
-class LicensingError( Exception ):
-    pass
-
-
-class LicenseNotFound( LicensingError ):
-    pass
-
-
-class LicenseIncompatibility( LicensingError ):
-    """Something is wrong with the License, or supporting infrastructure."""
-    pass
-
-
-class LicenseDuplicated( LicenseIncompatibility ):
-    """A duplicate but incompatible License was found."""
-    pass
-
-
-class LicenseDisjoint( LicenseIncompatibility ):
-    """When combining Licenses, we may want to take special action when it is detected that the
-    Grants containing Timespans that are disjoint, eg. use the most recent Grant.
-
-    """
-    pass
-
-
-class NotLicensed( LicensingError ):
-    pass
-
-
-class RegistrationError( LicensingError ):
-    pass
-
-
-class NotRegistered( RegistrationError ):
-    pass
-
-
-class DKIMError( LicensingError ):
-    pass
 
 
 def DKIM_pubkey( dkim, v="DKIM1", k="Ed25519" ):
@@ -194,227 +156,6 @@ except AttributeError:   # Python2
     domainkey_service.dns_trans	= string.maketrans( ' ._/', '----' )
 domainkey_service.idna_encoder	= codecs.getencoder( 'idna' )
 assert "a/b.c_d e".translate( domainkey_service.dns_trans ) == 'a-b-c-d-e'
-
-
-def into_hex( binary, encoding='ASCII' ):
-    return into_text( binary, 'hex', encoding )
-
-
-def into_b64( binary, encoding='ASCII' ):
-    return into_text( binary, 'base64', encoding )
-
-
-def into_text( binary, decoding='hex', encoding='ASCII' ):
-    """Convert binary bytes data to the specified decoding, (by default encoded to ASCII text), across
-    most versions of Python 2/3.  If no encoding, resultant decoding symbols remains as un-encoded
-    bytes.
-
-    A supplied None remains None.
-
-    """
-    if binary is not None:
-        if isinstance( binary, bytearray ):
-            binary		= bytes( binary )
-        assert isinstance( binary, bytes ), \
-            "Cannot convert to {}: {!r}".format( decoding, binary )
-        binary			= codecs.getencoder( decoding )( binary )[0]
-        binary			= binary.replace( b'\n', b'' )  # some decodings contain line-breaks
-        if encoding is not None:
-            return binary.decode( encoding )
-        return binary
-
-
-def into_bytes( text, decodings=('hex', 'base64'), ignore_invalid=None ):
-    """Try to decode base-64 or hex bytes from the provided ASCII text, pass thru binary data as bytes.
-    Must work in Python 2, which is non-deterministic; a str may contain bytes or text.
-
-    So, assume ASCII encoding, start with the most strict (least valid symbols) decoding codec
-    first.  Then, try as simple bytes.
-
-    """
-    if not text:
-        return None
-    if isinstance( text, bytearray ):
-        return bytes( text )
-    # First, see if the text looks like hex- or base64-decoded UTF-8-encoded ASCII
-    encoding,is_ascii		= 'UTF-8',lambda c: 32 <= c <= 127
-    try:
-        # Python3 'bytes' doesn't have .encode (so will skip this code), and Python2 non-ASCII
-        # binary data will raise an AssertionError.
-        text_enc		= text.encode( encoding )
-        assert all( is_ascii( c ) for c in bytearray( text_enc )), \
-            "Non-ASCII symbols found: {!r}".format( text_enc )
-        for c in decodings:
-            try:
-                binary		= codecs.getdecoder( c )( text_enc )[0]
-                #log.debug( "Decoding {} {} bytes from: {!r}".format( len( binary ), c, text_enc ))
-                return binary
-            except Exception:
-                pass
-    except Exception:
-        pass
-    # Finally, check if the text is already bytes (*possibly* bytes in Python2, as str ===
-    # bytes; so this cannot be done before the decoding attempts, above)
-    if isinstance( text, bytes ):
-        #log.debug( "Passthru {} {} bytes from: {!r}".format( len( text ), 'native', text ))
-        return text
-    if not ignore_invalid:
-        raise RuntimeError( "Could not encode as {}, decode as {} or native bytes: {!r}".format(
-            encoding, ', '.join( decodings ), text ))
-
-
-def into_keys( keypair, verify=False ):
-    """Return whatever Ed25519 (public, signing) keys are available in the provided unencrypted Keypair
-    (something w/ vk and sk attributes) or 32/64-byte key material.  This destructuring ordering is
-    consistent with the namedtuple('Keypair', ('vk', 'sk')).
-
-    Supports deserialization of keys from hex or base-64 encode public (32-byte) or secret/signing
-    (64-byte) data.  To avoid nondeterminism, we will assume that all Ed25519 key material is encoded in
-    base64 (never hex).
-
-    """
-    try:
-        # May be a Keypair namedtuple
-        if verify:
-            keypair_verify	= ed25519.crypto_sign_keypair( seed=keypair.sk )
-            assert keypair_verify.vk == keypair.vk, \
-                "Invalid Ed25519 Keypair; public key: {} doesn't match derived: {}".format(
-                    into_b64( keypair.vk ),
-                    into_b64( keypair_verify.vk ),
-                )
-        return keypair.vk, keypair.sk
-    except AttributeError:
-        pass
-    # Not a Keypair.  First, see if it's a serialized public/private key.
-    deserialized		= into_bytes( keypair, ('base64',), ignore_invalid=True )
-    if deserialized:
-        keypair			= deserialized
-    # Finally, see if we've recovered a signing or public key
-    if isinstance( keypair, bytes ):
-        if len( keypair ) == 64:
-            # Must be a 64-byte signing key, which also contains the public key.  Can verify.
-            if verify:
-                keypair_verify	= ed25519.crypto_sign_keypair( seed=keypair[0:32] )
-                assert keypair_verify.vk == keypair[32:64], \
-                    "Invalid Ed25519 Keypair; public key: {} doesn't match derived: {}".format(
-                        into_b64( keypair[32:64] ),
-                        into_b64( keypair_verify.vk ),
-                )
-            return keypair[32:64], keypair[0:64]
-        elif len( keypair ) == 32:
-            # Can only contain a 32-byte public key.  No way to confirm.
-            return keypair[:32], None
-    # Unknown key material.
-    return None, None
-
-
-def into_str( maybe ):
-    if maybe is not None:
-        return str( maybe )
-
-
-def into_str_UTC( ts, tzinfo=Timestamp.UTC ):
-    if ts is not None:
-        return ts.render( tzinfo=tzinfo, ms=False, tzdetail=True )
-
-
-def into_str_LOC( ts ):
-    return into_str_UTC( ts, tzinfo=Timestamp.LOC )
-
-
-def into_JSON( thing, indent=None, default=None, prefix=None ):
-    """Convert thing to JSON, optionally prefixing every line."""
-    def endict( x ):
-        try:
-            return dict( x )
-        except Exception as exc:
-            if default:
-                return default( x )
-            log.warning("Failed to JSON serialize {!r}: {}".format( x, exc ))
-            raise
-    # Unfortunately, Python2 json.dumps w/ indent emits trailing whitespace after "," making
-    # tests fail.  Make the JSON separators whitespace-free, so the only difference between the
-    # signed serialization and an pretty-printed indented serialization is the presence of
-    # whitespace.
-    separators			= (',', ':')
-    text			= json.dumps(
-        thing, sort_keys=True, indent=indent, separators=separators, default=endict )
-    if prefix and text:
-        text			= '\n'.join( prefix + line for line in text.splitlines() )
-    return text
-
-
-def into_boolean( val, truthy=(), falsey=() ):
-    """Check if the provided numeric or str val content is truthy or falsey; additional tuples of
-    truthy/falsey lowercase values may be provided.  The empty/whitespace string is Falsey."""
-    if isinstance( val, (int,float,bool)):
-        return bool( val )
-    assert isinstance( val, type_str_base )
-    if val.strip().lower() in ( 't', 'true', 'y', 'yes' ) + truthy:
-        return True
-    elif val.strip().lower() in ( 'f', 'false', 'n', 'no', '' ) + falsey:
-        return False
-    raise ValueError( val )
-
-
-def into_Timestamp( ts ):
-    """Convert to a Timestamp, retaining None.
-
-    """
-    if ts is not None:
-        if isinstance( ts, type_str_base ):
-            ts			= parse_datetime( ts )
-        if isinstance( ts, datetime.datetime ):
-            ts			= Timestamp( ts )
-        assert isinstance( ts, Timestamp )
-    return ts
-
-
-def into_Duration( dur ):
-    """Convert to a duration, retaining None"""
-    if dur is not None:
-        if not isinstance( dur, Duration ):
-            dur			= parse_seconds( dur )
-            assert isinstance( dur, (int, float) )
-            dur			= Duration( dur )
-    return dur
-
-
-def into_Timespan( timespan ):
-    """Convert to a Timespan, retaining None.  Expects a Timespan, or a JSON string, object or
-    mapping or sequence containing start, length."""
-    if timespan is not None:
-        if not isinstance( timespan, Timespan ):
-            if isinstance( timespan, type_str_base ):
-                timespan	= json.loads( timespan )
-            if hasattr( timespan, 'start' ) and hasattr( timespan, 'length' ):
-                timespan	= dict( start = timespan.start, length = timespan.length )
-            if is_mapping( timespan ) and set( ('start', 'length') ) <= set( timespan.keys() ):
-                timespan	= dict( start = timespan['start'], length = timespan['length'] )
-            # Finally, must be dict or sequence for constructing dict w/ start, length
-            timespan		= Timespan( **dict( timespan ))
-    return timespan
-
-
-def maybe_Timespan( timespan ):
-    """See if something may be a Timespan; return passed-thru None, or Exception on failure.
-
-    """
-    try:
-        timespan		= into_Timespan( timespan )
-    except Exception as exc:
-        timespan		= exc
-    return timespan
-
-
-def into_Grant( grant, _from=None ):
-    """Convert to a Grant, retaining None.  An empty Grant won't be included in serialize."""
-    if grant is not None:
-        if not isinstance( grant, Grant ):
-            if isinstance( grant, type_str_base ):
-                grant		= json.loads( grant )
-            grant		= Grant( _from=_from, **dict( grant ))
-    return grant
 
 
 def into_UUIDv4( machine ):
@@ -487,7 +228,7 @@ def domainkey( product, domain, service=None, pubkey=None ):
 
     dkim			= None
     if pubkey:
-        pubkey,_		= into_keys( pubkey )
+        pubkey,_		= ed25519.into_keys( pubkey )
         dkim			= '; '.join( "{k}={v}".format(k=k, v=v) for k,v in (
             ('v', 'DKIM1'),
             ('k', 'ed25519'),
@@ -495,280 +236,6 @@ def domainkey( product, domain, service=None, pubkey=None ):
         ))
 
     return (path, dkim)
-
-
-class Serializable( object ):
-    """A base-class that provides a deterministic Unicode JSON serialization of every __slots__
-    and/or __dict__ attribute, and a consistent dict representation of the same serialized data.
-    Access attributes directly to obtain underlying types.
-
-    Hidden attributes starting with _... are never included in serialization; the base Serializable
-    has an _path, which identifies a filesystem path where the Serializable has been stored.
-
-    Uses __slots__ in derived classes to identify serialized attributes; traverses the class
-    hierarchy's MRO to identify all attributes to serialize.  Output serialization is always in
-    attribute-name sorted order.
-
-    If an attribute requires special serialization handling (other than simple conversion to 'str'),
-    then include it in the class' serializers dict, eg:
-
-        serializers		= dict( special = into_hex )
-
-    It is expected that derived class' constructors will deserialize when presented with keywords
-    representing all keys.
-
-    Optionally indicate where the data was '_from', be it a file Path, or a License, for example.
-    The ultimate user of the Serializable data may verify the provenance of the data.
-
-    """
-
-    __slots__			= ('_from', )
-    serializers			= {}
-
-    def __init__( self, _from=None ):
-        self._from		= _from
-
-    def save( self, f, **kwds ):
-        """Writes the serialization to the specified open <file> f, remembering the <file>.path"""
-        kwds.setdefault( 'indent', 4 )
-        kwds.setdefault( 'encoding', 'UTF-8' )
-        ser			= self.serialize( **kwds )
-        log.debug( "Saving {} bytes to {}".format( len( ser ), f.name ))
-        f.write( ser )
-        f.flush()
-        self._from		= f.name
-        return self._from
-
-    def vars( self ):
-        """Returns all key/value pairs defined for the object, either from __slots__ and/or __dict__
-        (except hidden _...)."""
-        for cls in type( self ).__mro__:
-            try:
-                vars_seq	= tuple( cls.__slots__ )  # Having a key defined but not instantiated isn't valid.
-                if '__dict__' in vars_seq:
-                    vars_seq   += tuple( self.__dict__ )
-            except AttributeError:
-                try:
-                    vars_seq	= self.__dict__
-                except AttributeError as exc:
-                    vars_seq	= ()
-                    if cls is not object:  # Only the base object() is allowed to have neither __slots__ nor __dict__
-                        log.error( "vars for base {cls!r} instance {self!r} has neither __slots__ nor __dict__: {exc}".format(
-                            cls=cls, self=self,
-                            exc=''.join( traceback.format_exception( *sys.exc_info() )) if log.isEnabledFor( logging.TRACE ) else exc ))
-                        raise
-            for key in vars_seq:
-                if key[0] == '_':  # ignore hidden _... vars, eg. _from.
-                    continue
-                yield key, getattr( self, key )
-
-    def __copy__( self ):
-        """Create a new object by copying an existing object, taking __slots__ into account.
-
-        """
-        result			= self.__class__.__new__( self.__class__ )
-
-        for key,val in self.vars():
-            setattr( result, key, copy.copy( val ))
-
-        return result
-
-    def keys( self, every=False ):
-        """Yields the Serializable object's relevant (not absent/None/.empty()) keys.
-
-        For many uses (eg. conversion to dict), the default behaviour of ignoring keys with values
-        of None (or a Truthy .empty() method) is appropriate.  However, if you want all keys
-        regardless of content, specify every=True.
-
-        """
-        def suppressed( key, val ):
-            if self.serializer( key ) is False:		# Explicitly suppressed from serialization
-                return True
-            if val is None:				# Values of None are suppressed
-                return True
-            empty		= getattr( val, 'empty', None )
-            if empty is not None and hasattr( empty, '__call__' ) and empty():
-                return True
-            return False
-
-        for key,val in self.vars():
-            if every or not suppressed( key, val ):
-                yield key
-
-    def __contains__( self, key ):
-        """Checks if key is in the Serializable container (__slots__ or __dict__), without ignoring
-        "suppressed" (.empty()/None/no-serializer) keys.  In other words -- may include keys that
-        are suppressed in the standard serialization.
-
-        """
-        if key in self.keys( every=True ):
-            return True
-        return False
-
-    def serializer( self, key ):
-        """Finds any custom serialization formatter specified for the given attribute, defaults to None.
-
-        """
-        for cls in type( self ).__mro__:
-            try:
-                return cls.serializers[key]
-            except (AttributeError, KeyError):
-                pass
-
-    def __getitem__( self, key ):
-        """Returns the serialization of the requested key, passing thru values without a serializer.
-        We don't use our own __contains__, because this may be overridden in derive Serialized
-        classes to represent the semantics of that object type (eg. a Timespan, ...).
-
-        """
-        if key in self.keys( every=True ):
-            try:
-                serialize	= self.serializer( key )  # (no Exceptions)
-                value		= getattr( self, key )    # IndexError
-                if serialize:
-                    return serialize( value )             # conversion failure Exceptions
-                return value
-            except Exception as exc:
-                log.debug( "Failed to convert {class_name}.{key} with {serialize!r}: {exc}".format(
-                    class_name = self.__class__.__name__, key=key, serialize=serialize, exc=exc ))
-                raise
-        raise IndexError( "{} not found in keys: {}".format( key, ', '.join( self.keys( every=True ))))
-
-    def get( self, key, default=None ):
-        try:
-            return self.__getitem__( key )
-        except (KeyError, IndexError):
-            return default
-
-    def __setitem__( self, key, value ):
-        if key in set( dir( self )) - set( self.keys( every=True )):
-            raise IndexError( "{} is not a valid {} keys".format( key, self.__class__.__name__ ))  # Hidden _... or predefined
-        setattr( self, key, value )
-
-    set				= __setitem__
-
-    def setdefault( self, key, default ):
-        if key not in self:
-            self[key]           = default
-        return self[key]
-
-    def __str__( self ):
-        return self.JSON()
-
-    def __repr__( self ):
-        return '<' + self.__class__.__name__ + (
-            " (from {})".format( repr( self._from ))
-            if self._from or log.isEnabledFor( logging.DEBUG )
-            else ""
-        ) + '>'
-
-    def JSON( self, indent=4, default=None, prefix=None ):
-        """Return the default readable JSON representation of the present object."""
-        return into_JSON( self, indent=indent, default=default, prefix=prefix )
-
-    def serialize( self, indent=None, encoding='UTF-8', default=None, prefix=None ):
-        """Return a binary 'bytes' serialization of the present object.  Serialize to JSON, assuming
-        any complex sub-objects (eg. License, LicenseSigned) have a sensible dict representation.
-
-        The default serialization (ie. with indent=None, encoding to UTF-8) will be the one used to
-        create the digest.
-
-        If there are objects to be serialized that require special handling, they must not have a
-        'dict' interface (be convertible to a dict), and then a default may be supplied to serialize
-        them (eg. str).
-
-        An optional prefix string may be prepended to each line.
-
-        """
-        stream			= self.JSON( indent=indent, default=default, prefix=prefix )
-        if encoding:
-            stream		= stream.encode( encoding )
-        return stream
-
-    def sign( self, sigkey, pubkey=None ):
-        """Sign our default serialization, and (optionally) confirm that the supplied public key
-        (which will be used to check the signature) is correct, by re-deriving the public key.
-
-        """
-        vk, sk			= into_keys( sigkey )
-        assert sk, \
-            "Invalid ed25519 signing key provided"
-        if pubkey:
-            # Re-derive and confirm supplied public key matches supplied signing key
-            keypair		= ed25519.crypto_sign_keypair( sk[:32] )
-            assert keypair.vk == pubkey, \
-                "Mismatched ed25519 signing vs. public keys {!r} vs. {!r}".format(
-                    into_b64( keypair.vk ), into_b64( pubkey ))
-        signed			= ed25519.crypto_sign( self.serialize(), sk )
-        signature		= signed[:64]
-        return signature
-
-    def verify( self, pubkey, signature ):
-        """Check that the supplied signature matches this serialized payload, and return the verified
-        payload bytes.
-
-        """
-        pubkey, _		= into_keys( pubkey )
-        signature		= into_bytes( signature, ('base64',) )
-        assert pubkey and signature, \
-            "Missing required {}".format(
-                ', '.join( () if pubkey else ('public key',)
-                           + () if signature else ('signature',) ))
-        serialization		= self.serialize()
-        try:
-            verified		= ed25519.crypto_sign_open( signature + serialization, pubkey )
-            return verified
-        except Exception:
-            log.debug( f"License serialization w/ signature {into_b64( signature )} not signed by pubkey: {into_b64( pubkey )}: {serialization}" )
-            raise
-
-    def digest( self, encoding=None, decoding=None ):
-        """The SHA-256 hash of the serialization, as 32 bytes.  Optionally, encode w/ a named codec,
-        eg.  "hex" or "base64".  Often, these will require a subsequent .decode( 'ASCII' ) to become
-        a non-binary str.
-
-        """
-        binary			= hashlib.sha256( self.serialize() ).digest()
-        if encoding is not None:
-            binary		= codecs.getencoder( encoding )( binary )[0].replace(b'\n', b'')
-            if decoding is not None:
-                return binary.decode( decoding )
-        return binary
-
-    def __eq__( self, other ):
-        """Serializable things should produce the same digest if equal.  There may be simpler or
-        better equality tests, but this is the semantic for Serializable things or their hashes.
-
-        For reasoning, see:
-            https://stackoverflow.com/questions/390250/elegant-ways-to-support-equivalence-equality-in-python-classes
-
-        """
-        local_hash		= self.digest()
-        if isinstance( other, Serializable ):
-            other_hash		= other.digest()
-        elif isinstance( other, bytes ) and len( other ) == len( local_hash ):
-            other_hash		= other
-        else:
-            return NotImplemented
-        return local_hash == other_hash
-
-    def __ne__( self, other ):
-        """Unnecessary under Python3, but needed for Python 2"""
-        eq			= self.__eq__( other )
-        if eq is NotImplemented:
-            return NotImplemented
-        return not eq
-
-    def __hash__( self ):
-        """Returns a 64-bit signed integer representing the first 8 bytes of the digest"""
-        return struct.Struct('<q').unpack( self.digest()[:8] )[0]
-
-    def hexdigest( self ):
-        """The SHA-256 hash of the serialization, as a 256-bit (32 byte, 64 character) hex string."""
-        return self.digest( 'hex', 'ASCII' )
-
-    def b64digest( self ):
-        return self.digest( 'base64', 'ASCII' )
 
 
 class IssueRequest( Serializable ):
@@ -785,10 +252,10 @@ class IssueRequest( Serializable ):
     def __init__( self, author=None, author_pubkey=None, product=None,
                   client=None, client_pubkey=None, machine=None, **kwds ):
         self.author		= into_str( author )
-        self.author_pubkey, _	= into_keys( author_pubkey )
+        self.author_pubkey, _	= ed25519.into_keys( author_pubkey )
         self.product		= into_str( product )
         self.client		= into_str( client )
-        self.client_pubkey, _	= into_keys( client_pubkey )
+        self.client_pubkey, _	= ed25519.into_keys( client_pubkey )
         self.machine		= into_UUIDv4( machine )
         super( IssueRequest, self ).__init__( **kwds )
 
@@ -797,54 +264,6 @@ class IssueRequest( Serializable ):
         qd			= dict( self )
         qd['signature']		= into_b64( self.sign( sigkey=sigkey ))
         return urlencode( sorted( qd.items() ))
-
-
-def overlap_intersect( start, length, other ):
-    """Accepts a start/length, and a Timespan (something w/ start and length), and compute the
-    intersecting start/length, and its begin and (if known) ended timestamps.
-
-        start,length,begun,ended = overlap_intersect( start, length, other )
-
-    A start/Timespan w/ None for length is assumed to endure from its start with no time limit.
-
-    """
-    other			= into_Timespan( other )
-    # Detect the situation where there is no computable overlap, and start, length is defined by one
-    # pair or the other.
-    if start is None:
-        # This license has no defined start time (it is perpetual); other license determines
-        assert length is None, "Cannot specify a length without a start timestamp"
-        if other.start is None:
-            # Neither specifies start at a defined time
-            assert other.length is None, "Cannot specify a length without a start timestamp"
-            return None,None,None,None
-        if other.length is None:
-            return other.start,other.length,other.start,None
-        return other.start,other.length,other.start,other.start + other.length
-    elif other.start is None:
-        assert other.length is None, "Cannot specify a length without a start timestamp"
-        if length is None:
-            return start,length,start,None
-        return start,length,start,start + length
-
-    # Both have defined start times; begun defines beginning of potential overlap If the computed
-    # ended time is <= begun, then there is no (zero) overlap!
-    begun 		= max( start, other.start )
-    ended		= None
-    if length is None and other.length is None:
-        # But neither have duration
-        return start,length,begun,None
-
-    # At least one length; ended is computable, as well as the overlap start/length
-    if other.length is None:
-        ended		= start + length
-    elif length is None:
-        ended		= other.start + other.length
-    else:
-        ended		= min( start + length, other.start + other.length )
-    start		= begun
-    length		= Duration( 0 if ended <= begun else ended - begun )
-    return start,length,begun,ended
 
 
 class Agent( Serializable ):
@@ -922,7 +341,7 @@ class Agent( Serializable ):
         self.product		= product
         self.service		= service  # Likely deduced, w/ domainkey_service( product )
         self.keypair		= keypair and KeypairPlaintext( keypair )
-        self.pubkey,_		= into_keys( pubkey or self.keypair )
+        self.pubkey,_		= ed25519.into_keys( pubkey or self.keypair )
         super( Agent, self ).__init__( **kwds )
 
         # Now pubkey_query has all the details it requires to do a DKIM lookup, if necessary
@@ -1001,417 +420,6 @@ class Agent( Serializable ):
             pubkey	= into_b64( pubkey )
         ))
         return pubkey
-
-
-class Timespan( Serializable ):
-    """A time period, w/ a start and optionally a length.  An "empty" (0 length) Timespan may result
-    from a failed intersection.
-
-    """
-    __slots__			= (
-        'start', 'length'
-    )
-    serializers			= dict(
-        start		= into_str_UTC,
-        length		= into_str,
-    )
-
-    @property
-    def end( self ):
-        return None if self.start is None or self.length is None else self.start + self.length
-
-    def empty( self ):
-        return self.length == 0  # Note: None != 0, in both Python 2 and 3
-
-    def __nonzero__( self ):
-        return not self.empty()
-    __bool__			= __nonzero__  # Python3
-
-    def __repr__( self ):
-        return (
-            '<'
-            + (
-                (
-                    repr( self.start )
-                    + ' - '
-                    + repr( self.end )
-                    + ' = '
-                ) if log.isEnabledFor( logging.DEBUG ) else ''
-            )
-            + self.__class__.__name__
-            + '(' + repr(str( self.start ))
-            + ',' + repr(str( self.length ))
-            + ')>'
-        )
-
-    def __init__(
-        self,
-        start		= None,
-        length		= None,
-        **kwds
-    ):
-        """A License usually has a timespan of a start timestamp and (optional) duration length.
-        These cannot exceed the timespan of any License dependencies.  First, get any supplied start
-        time as a timestamp, and any duration length as a number of seconds.
-
-        A Timespan with a None start is assumed to be perpetual, and with a None length is assumed
-        to be perpetual from that start time.
-
-        """
-        self.start		= into_Timestamp( start )
-        self.length		= into_Duration( length )
-        super( Timespan, self ).__init__( **kwds )
-
-        assert self.length is None or self.start is not None, \
-            "Invalid Timespan; must have a start time if length specified"
-
-    def __contains__( self, other ):
-        """True iff we fully encompasses the other Timespan.
-
-        If 'other in self' is False, we know (at least) that self.start is not None, because the
-        full perpetual (no start or length) Timespan contains any other Timespan.
-
-        If 'other in self' and 'self in other' are both False, we know that both .start are
-        non-None, and at least one .length is non-None -- so at least self.end or other.end is
-        finite.
-
-        """
-        return self.start is None or (
-            other.start is not None and other.start >= self.start and (
-                self.end is None or (
-                    other.end is not None and other.end <= self.end
-                )
-            )
-        )
-
-    def intersection( self, *others ):
-        start			= self.start
-        length			= self.length
-        for other in others:
-            start,length,begun,ended = overlap_intersect( start, length, other )
-            if length is not None and length.total_seconds() == 0:
-                # We've reached a point where there is no overlap with some other Timespan, and our
-                # intersection is empty.  Return an empty Timespan (start time irrelevant, but
-                # cannot be None)
-                return Timespan( start, 0 )
-        return Timespan( start, length )
-
-    def adjacent( self, other ):
-        if other in self:
-            return True
-        if self in other:
-            return True
-        assert self.end is not None or other.end is not None, \
-            "Either {} or {} should have been non-perpetual".format( repr( self ), repr( other ))
-        if self.length is not None and other.start <= self.end <= other.end:
-            return True
-        if other.length is not None and self.start <= other.end <= self.end:
-            return True
-        return False
-
-    def union( self, *others ):
-        """Successively check for intersection or adjacency, expanding if possible, until there is
-        no intersection or adjacency with any remaining Timespan.  Each time we integrate another
-        Timespan, we have to recompute its union with all other Timespans, because they now may be
-        adjacent.
-
-        """
-        for i,other in enumerate( others ):
-            if self.adjacent( other ):
-                break
-        else:
-            # We completed without incorporating at detecting one intersecting/adjacent Timespan.  Done.
-            log.debug( "union: {} doesn't adjoin {}".format( repr( self ), ', '.join( map( repr, others ))))
-            return self
-        # We broke out of the loop, after detecting an overlap/intersection with the i'th Timespan;
-        # compute the (now larger) union with the remaining others.
-        if len( others ) > 1:
-            return ( self + other ).union( *( others[:i] + others[i+1:] ))
-        return ( self + other )
-
-    def __add__( self, other ):
-        """Add a Timespan, or something with a .start/.length or ['start'],['length'].  May result in
-        no change if there is no intersection/adjacency -- you can't "add" a disjoint Timespan!"""
-        other			= into_Timespan( other )
-        if other in self:
-            return self
-        if self in other:
-            return other
-        if self.length is not None and self.start <= other.start <= self.end:
-            if other.length is None:
-                return Timespan( self.start, None )
-            else:
-                return Timespan( self.start, other.end - self.start )
-        elif other.length is not None and other.start <= self.start <= other.end:
-            if self.length is None:
-                return Timespan( other.start, None )
-            else:
-                return Timespan( other.start, self.end - other.start )
-        else:
-            log.debug( "{} + {} doesn't overlap".format( repr( self ), repr( other )))
-        # Not overlapping/adjacent; no change
-        return self
-
-
-class Grant( Serializable ):
-    """The key/value capabilities granted by something like a License.  The first level names
-    (typically something related to the product name) usually specify a dict of key/value pairs, and
-    all must be serializable to JSON.  The values may themselves be Grants.  Specifically, the first
-    layer Grant is usually comprised of a couple of "global" values (eg. { "timespan": <Timespan>,
-    "machine": <UUID> }, and the remaining values will themselves be Grants, eg. w/ a ._from
-    indicating which LicenseSigned dependency they were initially from.
-
-    The Granted option names cannot be trusted; any License may carry a Grant of any option name
-    whatsoever.  So, the License itself must be validated as being issued by an expected author,
-    before its Grant of options can be trusted.  When a sub-License modifies a Grant (ie. issues a
-    subset of the granted capability to a licensee), it modifies the Grant, but retains the original
-    source License in _from.  So, when the grants() are finally delivered to the caller, they can
-    confirm that the top-level key (eg. "cpppo-test" = Grant( "Hz" = 100 ),_from=<LicenseSigned>)
-    actual came from the expected author (ie. has the correct pubkey).
-
-    Also, some License options granted in sub-Licenses may "accumulate", while others only accrue
-    to the direct client of the License.  Each License author must decide this; only their code
-    that validates their License knows the semantics of their Grant options.
-
-    We'll use a __dict__ instead of __slots__ to hold the unknown option key/dict pairs.
-
-    Two Licenses containing grants from same Grant group (say, 'cpppo-test') "combine" if they are
-    loaded in parallel, but "refine" if they are dependencies.  For example, if I load two Licenses
-    with Grant.cpppo-test["Hz"] of 1,000 and 200 respectively, I end up with a total Grant of 1,200
-    "Hz".  However, if a License contains a Grant of 200, and has a License in its dependencies that
-    grants() 1,000, I receive only the 200 (and it must be <= the dependencies' value).
-
-    The Grant &= Grant operator "refines", the Grant |= Grant "combines".
-
-    Note that combining Timespans between two licenses along with other features may grant
-    unexpected results -- extending the time duration of the features granted in one license, into
-    to the time duration of another license carrying different features.
-
-    """
-    def __init__( self, *args, **kwds ):
-        _from			= kwds.pop( '_from', None )  # Python 2 doesn't support mixing keyword args and **kwds
-        if args:
-            assert len( args ) == 1 and isinstance( args[0], (type_str_base, dict) ) and not kwds, \
-                "Grant option cannot be defined w/ multiple or non-str args both args: {args!r} and/or kwds: {kwds!r}".format(
-                    args=args, kwds=kwds )
-            if isinstance( args[0], type_str_base ):
-                kwds		= json.loads( args[0] )
-            else:
-                kwds		= args[0]
-        option			= dict( kwds )
-        # Ensure that options only has first-level keys w/ /dicts (actually, the Mapping API),
-        # unless _from is provided (indicating this is a sub-Grant).  In other words, an "anonymous"
-        # Grant can only contain Grants/dicts.  Anything that specifies a ._from may contain
-        # arbitrary key/value pairs; otherwise, .
-        if _from is None:
-            assert all(
-                is_mapping( v ) or isinstance( v, Grant )
-                for v in option.values()
-            ), "Found non-dict/Grant option(s): {keys}".format(
-                keys		= ', '.join(
-                    k for k,v in option.items()
-                    if not ( is_mapping( v ) or isinstance( v, Grant ))
-                )
-            )
-        self.__dict__.update( option )
-        super( Grant, self ).__init__( _from=_from )
-        log.debug( "Created {!r}: {}".format( self, self ))
-
-    def empty( self ):
-        """Detects if empty, and avoid serialization if so.  This allows someone to accidentally
-        define an empty Grant, without changing the signature vs. the same License w/ no Grant.
-        Must ignore "hidden" _...  and (in turn) empty keys, so use .keys() So, a Grant containing
-        empty Grants and/or keys with value None will be empty.
-
-        """
-        for _ in self.keys():
-            return False
-        return True
-
-    def grants( self, once=None ):
-        return self
-
-    def items( self ):
-        return self.__dict__.items()
-
-    class Merging( Enum ):
-        REFINING	= 0
-        COMBINED	= 1
-
-    def merge( self, group, key, value, style=Merging.REFINING ):
-        """When a Grant group's key (eg. grant['cpppo-test']['Hz']) is presented with a new value in
-        some sub-License, this must be consistent with (a strict subset of) any existing Grant from
-        any License dependencies: you can't provide a sub-Licensee with "more" than your License
-        dependencies provide.
-
-        For example, if ['cpppo-test']['Hz'] is granted a 10 Hz I/O (poll rate) by Dominion Research
-        & Development Corp., the value assigned to the current Grant['cpppo-test']['Hz'] must be <=
-        10.
-
-        Typically, a Grant group key w/ no value (ie. None) indicates no constraint, so we don't
-        allow replacing a Grant constraint w/ None, in either REFINING or COMBINED; it will simply pass
-        the existing limit through -- we won't allow a restrictive Grant to be replaced by an
-        undefined/unrestricted Grant.
-
-        Grants completely disjoint in time cannot be COMBINEd; any Timespans presented must overlap,
-        and the *intersection* is kept.  This is because we are combining the capabilities of both
-        sub-Licenses: the combined capability is only valid for the intersection of the License
-        dependencies' combination!
-
-        In other words, if you have 100 "Hz" from Jan 1 to July 31, and 200 "Hz" from May 1 to Dec
-        31, if you chose to combine those sub-Licenses, the combined Grant will be 100 "Hz" from May
-        1 to July 31.
-
-        Returns the {REFINING,COMBINED}d value, confirmed to be a subset (or accumulation) of any
-        current value; None indicates there is no restriction, and should only be possible if both
-        the current and value are None.
-
-        """
-        current			= self.get( group, {} ).get( key )
-        result			= value
-        # If a non-None current for this Grant group's value is already present, do some basic
-        # validation.  Trying to replace a non-None (restrictive) current w/ a value of None
-        # (unrestricted) is not allowed.
-        if isinstance( current, type_num_base ):
-            if style is Grant.Merging.REFINING:
-                if value is None or value > current:
-                    raise LicenseIncompatibility( "License Grant.{group}[{key!r}] of {value!r} exceeds limit: {current!r}".format(
-                        group=group, key=key, value=value, current=current ))
-            else:
-                result		= current + ( value or 0 )
-        elif isinstance( current, type_str_base ):
-            current_set		= set( current if is_listlike( current ) else (current,) )
-            if style is Grant.Merging.REFINING:
-                if value is None or value not in current_set:
-                    raise LicenseIncompatibility( "License Grant.{group}[{key!r}] of {value!r} doesn't match: {current!r}".format(
-                        group=group, key=key, value=value, current=current_set ))
-            else:
-                if value is not None:
-                    current_set.add( value )
-                result		= list( current_set )
-                if len( result ) == 1:
-                    result,	= result
-        elif isinstance( current, Timespan ) or isinstance( maybe_Timespan( value ), Timespan ):
-            # Either the current or new value is a Timespan.  Let's see if the value is within the
-            # provided current Timespan.  If two Grants are disjoint, raises exception
-            current		= into_Timespan( current )      # May be None (no restriction)
-            result = value	= into_Timespan( value )        # ''
-            if style is Grant.Merging.REFINING:
-                if ( Timespan() if value is None else value ) not in ( Timespan() if current is None else current ):
-                    raise LicenseIncompatibility( "License Grant.{group}[{key!r}] of {value!r} is not within: {current!r}".format(
-                        group=group, key=key, value=value, current=current ))
-            else:
-                intersect	= ( Timespan() if current is None else current ).intersection( Timespan() if value is None else value )
-                if not intersect:
-                    raise LicenseDisjoint( "License Grant.{group}[{key!r}] of {value!r} do not overlap: {current!r}".format(
-                        group=group, key=key, value=value, current=current ))
-                result		= intersect
-        elif current is not None:
-            raise LicenseIncompatibility( "License Grant.{group}[{key!r}] of {value!r} not comparable to: {current!r}".format(
-                group=group, key=key, value=value, current=current ))
-
-        # The provided value is a valid refinement (ie. subset) or combination of the current value
-        log.info( "{style} Grant {group}'s {key} = {current!r} w/ {value!r} ==> {result!r}".format(
-            style=style, group=group, key=key, current=current, value=value, result=result ))
-        return result
-
-    def _integrate( self, rhs_grant, style ):
-        """Grant &/| Grant REFINING or COMBINED the current Grant, w/ the keys/Grants carried by the
-        given grant -- which must typically specify a "subset" (&=) or "union" (|=) of the
-        capabilities granted by the current Grant.  If each granted capability (key) is a valid
-        refinement, then the current Grant assumes the refined value.
-
-        An existing Grant with its heritage will be retained; the refinement applied
-
-        If a completely new group is being added -- a previously unknown Grant -- then, we will also
-        copy the source Grant._from heritage.  In the case of Grants from Licenses, this will be the
-        authoring Agent from the License that originally authored the Grant.
-
-        If the provided Grant is under an already known group key in the present Grant, and they are
-        both Grants -- then we will ensure that the _from is identical.
-
-        """
-        assert isinstance( rhs_grant, Grant ), \
-            "Expected to {style} against a Grant, not a {name}".format( style=style, name=rhs_grant.__class__.__name__ )
-        for group,rhs_group_grant in rhs_grant.items():
-            assert isinstance( rhs_group_grant, Grant ), \
-                "Expected to {style} another Grant group {group}, not a {name}{extra}".format(
-                    style=style, group=group, name=rhs_group_grant.__class__.__name__,
-                    extra="; {} in {}".format( repr( rhs_group_grant ), repr( rhs_grant )) if log.isEnabledFor( logging.DEBUG ) else "" )
-            if group in self.keys( every=True ):
-                # An existing group key; only if no heritage is known do we assume the authorship of
-                # the supplied refining Grant.
-                lhs_group_grant	= self[group]
-                if lhs_group_grant._from != rhs_group_grant._from:
-                    if style is Grant.Merging.COMBINED:
-                        # When License.grants() are COMBINED, the Grants must come from the same author
-                        raise LicenseIncompatibility( "License Grant group {group}'s author {lhs_auth!r} incompatible with {rhs_auth!r}".format(
-                            group=group, lhs_auth=lhs_group_grant._from, rhs_auth=rhs_group_grant._from ))
-                    if lhs_group_grant._from is None:
-                        log.info( "Inherits {} {!r}: {} author to that of {!r}: {}".format(
-                            group, lhs_group_grant, lhs_group_grant, rhs_group_grant, rhs_group_grant ))
-                        lhs_group_grant._from = rhs_group_grant._from
-            else:
-                # A completely new group key; assume the heritage of the supplied Grant
-                lhs_group_grant = self[group] = Grant( _from=rhs_group_grant._from )
-                log.info( "Creating {} {!r}: {} author w/ that of {!r}: {}".format(
-                    group, lhs_group_grant, lhs_group_grant, rhs_group_grant, rhs_group_grant ))
-            for key,value in rhs_group_grant.items():
-                update		= self.merge( group=group, key=key, value=value, style=style )
-                if update is not None:
-                    lhs_group_grant[key] = update
-
-    def __iand__( self, rhs_grant ):
-        self._integrate( rhs_grant, style=Grant.Merging.REFINING )
-        log.debug( "After Grant &= {}:\n{}".format(
-            ', '.join( "{} = {} = {}".format( key, repr( rhs ), rhs_grant[key] ) for key,rhs in rhs_grant.items() ),
-            '\n'.join( "{} = {} = {}".format( key, repr( lhs ), self[key] ) for key,lhs in self.items() )))
-        return self
-
-    def __ior__( self, rhs_grant ):
-        self._integrate( rhs_grant, style=Grant.Merging.COMBINED )
-        log.debug( "After Grant |= {}:\n{}".format(
-            ', '.join( "{} = {} = {}".format( key, repr( rhs ), rhs_grant[key] ) for key,rhs in rhs_grant.items() ),
-            '\n'.join( "{} = {} = {}".format( key, repr( lhs ), self[key] ) for key,lhs in self.items() )))
-        return self
-
-    def __le__( self, rhs_grant ):
-        """Detect if this Grant is a subset of another.  If it has additional keys, or has a Grant
-        that couldn't be satisfied by our Grant, then we are considered "not a subset".
-
-        We can only compare Grants consisting of group:Grant pairs using this operator; A Grant may
-        contain either group: Grant pairs, or key: value pairs.  Ensure Grant's _from are compatible
-        and values are a subset, then compare each group:Grant's key:value pairs for compatibilityf
-
-        For key/value pairs, use merge( ..., REFINING), which does not alter the Grant, but ensures
-        that the target Grant's key/value are a superset of the given Grant's key/value; in effect,
-        that this Grant is a subset of the target Grant.
-
-        """
-        try:
-            if miss_groups     := set( self.keys( every=True )) - set( rhs_grant.keys( every=True )):
-                raise LicenseDisjoint( "Grant group(s) {} do not overlap".format( ', '.join( miss_groups )))
-            if self._from != rhs_grant._from:
-                raise LicenseIncompatibility( "License Grant {lhs_auth!r} incompatible with {rhs_auth!r}".format(
-                    lhs_auth=self._from, rhs_auth=rhs_grant._from ))
-            for group,lhs_group_grant in self.items():
-                rhs_group_grant	= rhs_grant[group]
-                assert isinstance( lhs_group_grant, Grant ) and isinstance( rhs_group_grant, Grant ), \
-                    "Only {group} Grants may be compared for subset, not {lhs_type} vs {rhs_type}".format(
-                        group=group, lhs_type=type(lhs_group_grant), rhs_type=type(rhs_grant) )
-                if miss_keys   := set( lhs_group_grant.keys( every=True )) - set( rhs_group_grant.keys( every=True )):
-                    raise LicenseDisjoint( "Grant {} keys {} do not overlap".format(
-                        group, ', '.join( miss_keys )))
-                for key,value in lhs_group_grant.items():
-                    # Verify RHS value is a subset of LHS value, or raise LicenseIncompatibility
-                    subset	= rhs_grant.merge( group=group, key=key, value=value, style=Grant.Merging.REFINING )
-                    log.info( "Grant group {}'s key {} subset {} <= {} ==> {}".format(
-                              group, key, value, lhs_group_grant[key], subset ))
-        except LicenseIncompatibility as exc:
-            log.info( "Grant {} is not a subset of {}: {}".format( self, rhs_grant, exc ))
-            return False
-        log.debug( "Grant {} is a subset of {}".format( self, rhs_grant ))
-        return True
 
 
 class License( Serializable ):
@@ -1575,7 +583,7 @@ class License( Serializable ):
         return self.timespan and self.timespan.length
 
     def grants( self, once=None ):
-        """Compute and return the full License Grant accumulated by this licence and all of its
+        """Compute and return the full License Grant accumulated by this license and all of its
         License dependencies.  This is what rolls up a tree of License dependencies into a top-level
         set of Grant groups/keys.  Higher-level License Grants must comply with any Grants by
         License dependencies.
@@ -1610,7 +618,7 @@ class License( Serializable ):
         # have two distinct Licenses for a product that each grant us a certain amount of a
         # capability, we can combine them.
         for lic in self.dependencies or []:
-            res_grants	      |= lic.grants( once=once )  # will be Grant() if lic.digest() already in seen
+            res_grants	      |= lic.grants( once=once )  # will be Grant() if lic.digest() already in once
 
         # Now we've accumulated the full suite of merged known Grants from sub-Licenses; this may
         # include Grants w/ the same group name as our License's service name (either by accident,
@@ -1752,7 +760,7 @@ class License( Serializable ):
 
         """
         if author_pubkey:
-            author_pubkey,_	= into_keys( author_pubkey )
+            author_pubkey,_	= ed25519.into_keys( author_pubkey )
             assert author_pubkey, "Unrecognized author_pubkey provided"
 
         # TODO: This identifies and allows *only* Licenses whose primary author matches the provided
@@ -2178,7 +1186,7 @@ class KeypairPlaintext( Serializable ):
             vk,sk		= authoring( why="No Keypair supplied to KeypairPlaintext" )
         if hasattr( sk, 'sk' ):
             # Provided with a raw ed25519.Keypair or KeypairPlaintext; use its sk; retain any supplied vk for confirmation
-            _,self.sk		= into_keys( sk )
+            _,self.sk		= ed25519.into_keys( sk )
         else:
             self.sk		= into_bytes( sk, ('base64',) )
         assert len( self.sk ) in (32, 64), \
@@ -2256,7 +1264,7 @@ class KeypairEncrypted( Serializable ):
             # A signing key provided (and maybe also encrypted); let's get the private key bytes
             if hasattr( sk, 'sk' ):
                 # Provided with a raw ed25519.Keypair or KeypairPlaintext; extract its sk, and use any supplied vk for confirmation
-                vk,sk		= into_keys( sk )
+                vk,sk		= ed25519.into_keys( sk )
             else:
                 sk		= into_bytes( sk, ('base64',) )
             assert isinstance( sk, bytes ), \
@@ -2897,8 +1905,9 @@ def key_lic_sequence_logger( func ):
                         key._from if hasattr( key, '_from' ) else '',
                     ))
                 payload		= ( yield key,lic )
-        except StopIteration:
-            pass
+        except StopIteration as exc:
+            # Make sure we re-yield the same StopIteration.value payload
+            return exc.value
     return wrapper
 
 
@@ -3361,13 +2370,16 @@ def authorized_nolog(
                 continue
             # No more basenames available, done CHECKING.  Did we find anything?  If not, we'll have to fall thru to REGISTERING
             if licenses:
-                # OK, we found at least one keypair, so we dont' need to fall thru to REGISTERING.
+                # OK, we found at least one keypair, so we don't need to fall thru to REGISTERING.
                 # Did we find any Licenses?
                 if not any( lic for lic in licenses.values() ):
                     # Keypair(s) found, but no Licenses.  Guess we have to try to get one...
                     state	= State.REGISTERING  # continues on to LICENSING
                     continue
-                # Success!  We found at least one Keypair, and at least one License was found/issued!
+                # Success!  We found at least one Keypair, and at least one License was
+                # found/issued!  We don't perform logic at this level to aggregate the Grant
+                # payloads, because higher level interfaces will evaluate the accumulation of Grants
+                # and may choose to acquire new Licenses, etc.
                 return
 
         elif state is State.REGISTERING:

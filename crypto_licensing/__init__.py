@@ -22,5 +22,5 @@ __license__                     = "Dual License: GPLv3 (or later) and Commercial
 __all__				= ['ed25519', 'x25519', 'licensing', 'misc']
 
 # These modules form the public interface of crypto-licensing; always load them into main namespace
-from .version	import __version__, __version_info__
-from .licensing	import *
+from .version		import __version__, __version_info__
+from .licensing		import *

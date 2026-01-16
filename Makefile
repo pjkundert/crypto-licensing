@@ -4,8 +4,8 @@
 
 SHELL		= /bin/bash
 
-ALL		= server
-
+OPT_ALL		= server
+OPT_NOWEB	= tests
 
 # PY3 is the target Python interpreter.  It must have pytest installed.
 # The python2 assumes a Nix supplied python2, and that all Python2 "pip"
@@ -19,7 +19,9 @@ PY3_V		= $(shell $(PY3) -c "import sys; print('-'.join((next(iter(filter(None,sy
 
 TZ		?= Canada/Mountain
 
-VERSION		= $(shell $(PY3) -c 'exec(open("crypto_licensing/version.py").read()); print( __version__ )')
+MODULE		= crypto_licensing
+VERSION		= $(shell $(PY3) -c 'exec(open("$(MODULE)/version.py").read()); print( __version__ )')
+WHEEL		= dist/$(MODULE)-$(VERSION)-py3-none-any.whl
 
 GIT_SSH_COMMAND	= ssh -o StrictHostKeyChecking=no
 export GIT_SSH_COMMAND
@@ -83,7 +85,7 @@ nix-%:
 #     make[1]: Entering directory '/Users/perry/src/crypto-licensing'
 #     ...
 #
-test:	# install-all  # web.py server tests are unreliable
+test:	install-all-noweb  # web.py server tests are unreliable
 	$(PY3TEST)
 
 doctest:
@@ -94,10 +96,10 @@ analyze:
 	$(PY3) -m flake8 --color never -j 1 --max-line-length=200 \
 	  --ignore=W503,E201,E202,E127,E221,E222,E223,E226,E231,E241,E242,E251,E265,E272,E274,E275 \
 	  --extend-exclude="ed25519_djb.py,djbec.py,__init__.py" \
-	  crypto_licensing
+	  $(MODULE)
 
 pylint:
-	cd .. && pylint crypto_licensing --disable=W,C,R
+	cd .. && pylint $(MODULE) --disable=W,C,R
 
 #
 # venv:		Create a Virtual Env containing the installed repo
@@ -147,7 +149,7 @@ products:			dominion			\
 				crypto-licensing-server
 
 test-server:			products
-	rm licensing.db; $(PY3) -m crypto_licensing.licensing -vvvv --no-gui --username=a@b.c --password=password --config crypto_licensing/licensing
+	rm licensing.db; $(PY3) -m $(MODULE).licensing -vvvv --no-gui --username=a@b.c --password=password --config $(MODULE)/licensing
 
 
 GLOBAL_OPTIONS	= -v
@@ -237,7 +239,7 @@ crypto-licensing-server:	crypto-licensing $(CREDENTIALS)/crypto-licensing-server
 # an absolute path, no config-path searching will be done.  Otherwise, we'll save in the
 # most-specific writable location (instead of the default most-general).
 %.crypto-keypair: %.crypto-seed
-	$(PY3) -m crypto_licensing $(GLOBAL_OPTIONS)		\
+	$(PY3) -m $(MODULE) $(GLOBAL_OPTIONS)			\
 	    --name $(KEYNAME)					\
 	    --extra $(dir $(basename $@ )) --reverse-save	\
 	    registered						\
@@ -246,7 +248,7 @@ crypto-licensing-server:	crypto-licensing $(CREDENTIALS)/crypto-licensing-server
 
 # Create .crypto-license, signed by .crypto-keypair
 %.crypto-license: %.crypto-keypair
-	$(PY3) -m crypto_licensing $(GLOBAL_OPTIONS)		\
+	$(PY3) -m $(MODULE) $(GLOBAL_OPTIONS)			\
 	    --name $(basename $@ )				\
 	    --extra $(dir $(basename $@ )) --reverse-save	\
 	   license						\
@@ -268,8 +270,8 @@ crypto-licensing-server:	crypto-licensing $(CREDENTIALS)/crypto-licensing-server
             --eval "(write-file \"$@\")" \
             --kill
 
-PYS		= $(shell find crypto_licensing -name '*.py' -and -not -name '*_test.py' )
-TXT		= $(patsubst %.org,%.txt,$(wildcard crypto_licensing/licensing/static/txt/*.org))
+PYS		= $(shell find $(MODULE) -name '*.py' -and -not -name '*_test.py' )
+TXT		= $(patsubst %.org,%.txt,$(wildcard $(MODULE)/licensing/static/txt/*.org))
 
 # Any build dependencies that are dynamically generated, and may need updating from time to time
 deps:		$(TXT)
@@ -277,14 +279,14 @@ deps:		$(TXT)
 #
 # Python installation artifacts
 #
-WHEEL		= dist/crypto_licensing-$(VERSION)-py3-none-any.whl
-
+# If any .py's or any deps needed updating, rebuild the wheel
+#
 $(WHEEL):	$(TXT) $(PYS) install-dev
 	$(PY3) -m build
 	@ls -last dist
 
-.PHONY: wheel build install
-wheel:		install-dev $(WHEEL)
+.PHONY: wheel build install install-all clean
+wheel:		$(WHEEL)
 
 build: 		wheel
 
@@ -292,8 +294,11 @@ build: 		wheel
 install:	$(WHEEL) FORCE
 	$(PY3) -m pip install --no-user --force-reinstall $<
 
-install-all:		$(WHEEL) FORCE
-	$(PY3) -m pip install --no-user --force-reinstall $<[$(ALL)]
+install-all:	$(WHEEL) FORCE
+	$(PY3) -m pip install --no-user --force-reinstall $<[$(OPT_ALL)]
+
+install-all-noweb: $(WHEEL) FORCE
+	$(PY3) -m pip install --no-user --force-reinstall $<[$(OPT_NOWEB)]
 
 install-%: # ...-dev, -tests
 	$(PY3) -m pip install --no-user --upgrade .[$*]

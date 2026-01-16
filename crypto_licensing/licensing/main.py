@@ -46,7 +46,7 @@ from ..misc		import (
     timer, Timestamp,
     log_cfg, log_levelmap, log_level,
     config_paths, config_open, ConfigNotFoundError,
-    unquote
+    unquote, into_boolean,
 )
 from ..			import licensing
 from ..misc		import input_secure

@@ -8,31 +8,34 @@ import logging
 import os
 import pytest
 
-from ..misc import pytz
-
-try:
-    import chacha20poly1305
-except ImportError:
-    chacha20poly1305		= None
-
 from dns.exception	import DNSException
 from requests		import ConnectionError
+
+from .defaults		import LICEXTENSION
+from .errors		import (
+    LicenseIncompatibility,     
+)
+from .grants		import (
+    Timespan, into_Timestamp, into_Duration, into_str_UTC,
+)
+from .serializable	import (
+    into_JSON,
+)
 from .verification	import (
-    License, LicenseSigned, LicenseIncompatibility, Timespan, Agent,
+    License, LicenseSigned, Agent,
     KeypairPlaintext, KeypairEncrypted, machine_UUIDv4,
     domainkey, domainkey_service, overlap_intersect,
-    into_b64, into_hex, into_str, into_str_UTC, into_JSON, into_keys, into_bytes,
-    into_Timestamp, into_Duration,
     authoring, issue, verify, load, load_keypairs, check, authorized,
     DKIM_pubkey, DKIMError,
     ChaCha20Poly1305
 )
-from ..			import ed25519
 
 from ..misc 		import (
-    deduce_name, Timestamp
+    deduce_name, Timestamp, pytz,
+    into_b64, into_hex, into_str, into_bytes,
 )
-from .defaults		import LICEXTENSION
+from ..			import ed25519
+
 
 log				= logging.getLogger( "verification_test" )
 
@@ -179,7 +182,7 @@ def test_KeypairEncrypted_smoke():
         == kp_r.into_keypair( username=username, password=password ) \
         == kp_e2.into_keypair( username=username, password=password )
 
-    awesome_keypair		= into_keys( awesome_sigkey )
+    awesome_keypair		= ed25519.into_keys( awesome_sigkey )
     kp_a			= KeypairEncrypted(
         salt		= b'\x01' * 12,
         sk		= awesome_keypair[1],
@@ -387,7 +390,7 @@ def test_License_base( monkeypatch ):
 def test_LicenseSigned():
     """Tests Licenses derived from other License dependencies."""
     awesome_keypair = authoring( seed=awesome_sigkey[:32] )
-    awesome_pubkey, _ = into_keys( awesome_keypair )
+    awesome_pubkey, _ = ed25519.into_keys( awesome_keypair )
 
     print("Awesome, Inc. ed25519 keypair; Signing: {sk}".format( sk=binascii.hexlify( awesome_keypair.sk )))
     print("Awesome, Inc. ed25519 keypair; Public:  {pk_hex} == {pk}".format( pk_hex=into_hex( awesome_keypair.vk ), pk=into_b64( awesome_keypair.vk )))
@@ -480,7 +483,7 @@ def test_LicenseSigned():
     #        "v=DKIM1; k=ed25519; p=PW847szICqnQBzbdr5TAoGO26RwGxG95e3Vd/M+/GZc="
     #
     enduser_keypair		= authoring( seed=enduser_seed, why="from enduser seed" )
-    enduser_pubkey, enduser_sigkey = into_keys( enduser_keypair )
+    enduser_pubkey, enduser_sigkey = ed25519.into_keys( enduser_keypair )
     print("End User, LLC ed25519 keypair; Signing: {sk}".format( sk=into_hex( enduser_keypair.sk )))
     print("End User, LLC ed25519 keypair; Public:  {pk_hex} == {pk}".format( pk_hex=into_hex( enduser_keypair.vk ), pk=into_b64( enduser_keypair.vk )))
 
@@ -963,7 +966,7 @@ def test_licensing_authorized( tmp_path ):
     # User, LLC has a license to run "EtherNet/IP Tool" on any machine, any number of times, and
     # that it was previously saved (eg. when we installed a copy of "EtherNet/IP Tool" here?)  So,
     # we should be able to find it...
-    awesome_pubkey, _		= into_keys( awesome_sigkey )
+    awesome_pubkey, _		= ed25519.into_keys( awesome_sigkey )
     authorizations		= dict(
         (into_b64( key.vk ) if key else None, lic)
         for key, lic in authorized(

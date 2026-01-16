@@ -33,7 +33,7 @@ dependencies = [
     "pytz				; python_version < \"3.9\"",
     "pytz_deprecation_shim		; python_version >= \"3.9\"",
     "requests			>=2.20,<3",
-    "requests-toolbelt	>=1",
+    "requests-toolbelt		>=1",
     "tzlocal",
 ]
 

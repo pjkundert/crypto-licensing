@@ -17,10 +17,10 @@
 #
 
 import calendar
+import codecs
 import datetime
 import fnmatch
 import functools
-import types
 import getpass
 import glob
 import logging
@@ -30,6 +30,7 @@ import re
 import sys
 import time
 import traceback
+import types
 
 from functools		import wraps
 
@@ -99,6 +100,16 @@ type_num_base			= Number
 unicode				= str
 
 
+__author__                      = "Perry Kundert"
+__email__                       = "perry@dominionrnd.com"
+__copyright__                   = "Copyright (c) 2022 Dominion R&D Corp."
+__license__                     = "Dual License: GPLv3 (or later) and Commercial (see LICENSE)"
+
+"""
+Miscellaneous functionality used by various other modules.
+"""
+
+
 def is_mapping( thing ):
     """See if the thing implements the Mapping protocol."""
     return hasattr( thing, 'keys' ) and hasattr( thing, '__getitem__' )
@@ -112,14 +123,89 @@ def is_listlike( thing ):
     return not isinstance( thing, (type_str_base,type) ) and hasattr( thing, '__getitem__' )
 
 
-__author__                      = "Perry Kundert"
-__email__                       = "perry@dominionrnd.com"
-__copyright__                   = "Copyright (c) 2022 Dominion R&D Corp."
-__license__                     = "Dual License: GPLv3 (or later) and Commercial (see LICENSE)"
+def into_text( binary, decoding='hex', encoding='ASCII' ):
+    """Convert binary bytes data to the specified decoding, (by default encoded to ASCII text), across
+    most versions of Python 2/3.  If no encoding, resultant decoding symbols remains as un-encoded
+    bytes.
 
-"""
-Miscellaneous functionality used by various other modules.
-"""
+    A supplied None remains None.
+
+    """
+    if binary is not None:
+        if isinstance( binary, bytearray ):
+            binary		= bytes( binary )
+        assert isinstance( binary, bytes ), \
+            "Cannot convert to {}: {!r}".format( decoding, binary )
+        binary			= codecs.getencoder( decoding )( binary )[0]
+        binary			= binary.replace( b'\n', b'' )  # some decodings contain line-breaks
+        if encoding is not None:
+            return binary.decode( encoding )
+        return binary
+
+
+def into_hex( binary, encoding='ASCII' ):
+    return into_text( binary, 'hex', encoding )
+
+
+def into_b64( binary, encoding='ASCII' ):
+    return into_text( binary, 'base64', encoding )
+
+
+def into_str( maybe ):
+    if maybe is not None:
+        return str( maybe )
+
+
+def into_bytes( text, decodings=('hex', 'base64'), ignore_invalid=None ):
+    """Try to decode base-64 or hex bytes from the provided ASCII text, pass thru binary data as bytes.
+    Must work in Python 2, which is non-deterministic; a str may contain bytes or text.
+
+    So, assume ASCII encoding, start with the most strict (least valid symbols) decoding codec
+    first.  Then, try as simple bytes.
+
+    """
+    if not text:
+        return None
+    if isinstance( text, bytearray ):
+        return bytes( text )
+    # First, see if the text looks like hex- or base64-decoded UTF-8-encoded ASCII
+    encoding,is_ascii		= 'UTF-8',lambda c: 32 <= c <= 127
+    try:
+        # Python3 'bytes' doesn't have .encode (so will skip this code), and Python2 non-ASCII
+        # binary data will raise an AssertionError.
+        text_enc		= text.encode( encoding )
+        assert all( is_ascii( c ) for c in bytearray( text_enc )), \
+            "Non-ASCII symbols found: {!r}".format( text_enc )
+        for c in decodings:
+            try:
+                binary		= codecs.getdecoder( c )( text_enc )[0]
+                #log.debug( "Decoding {} {} bytes from: {!r}".format( len( binary ), c, text_enc ))
+                return binary
+            except Exception:
+                pass
+    except Exception:
+        pass
+    # Finally, check if the text is already bytes (*possibly* bytes in Python2, as str ===
+    # bytes; so this cannot be done before the decoding attempts, above)
+    if isinstance( text, bytes ):
+        #log.debug( "Passthru {} {} bytes from: {!r}".format( len( text ), 'native', text ))
+        return text
+    if not ignore_invalid:
+        raise RuntimeError( "Could not encode as {}, decode as {} or native bytes: {!r}".format(
+            encoding, ', '.join( decodings ), text ))
+
+
+def into_boolean( val, truthy=(), falsey=() ):
+    """Check if the provided numeric or str val content is truthy or falsey; additional tuples of
+    truthy/falsey lowercase values may be provided.  The empty/whitespace string is Falsey."""
+    if isinstance( val, (int,float,bool)):
+        return bool( val )
+    assert isinstance( val, type_str_base )
+    if val.strip().lower() in ( 't', 'true', 'y', 'yes' ) + truthy:
+        return True
+    elif val.strip().lower() in ( 'f', 'false', 'n', 'no', '' ) + falsey:
+        return False
+    raise ValueError( val )
 
 
 #

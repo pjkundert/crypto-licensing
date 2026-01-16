@@ -24,11 +24,19 @@ __all__				= [
     'Serializable', 'LicenseIncompatibility', 'License', 'LicenseSigned', 'Agent',
     'domainkey', 'domainkey_service', 'authoring',
     'issue', 'verify', 'load', 'load_keypairs', 'save', 'save_keypair',
-    'check', 'license',  'registered', 'authorized', 'machine_UUIDv4',
+    'check', 'check_nolog', 'license',  'registered', 'authorized', 'authorized_nolog',
+    'machine_UUIDv4',
     'KeypairEncrypted', 'KeypairPlaintext',
     'KEYPATTERN', 'KEYEXTENSION', 'LICPATTERN', 'LICEXTENSION',
     'ENVPASSWORD', 'ENVUSERNAME',
 ]
 
 from .defaults		import *
+from .errors		import *
+from .grants		import *
+from .serializable	import *
 from .verification	import *
+# And a few conversion utilities from ..misc that used to be defined here
+from ..misc		import (
+    into_boolean, into_b64, into_text, into_hex, into_str,
+)

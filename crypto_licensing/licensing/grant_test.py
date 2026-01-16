@@ -5,21 +5,27 @@ import logging
 import pytest
 import random
 
-from ..misc import pytz
-
-from dns.exception import DNSException
-from requests import ConnectionError
-
 from .verification import (
-    License, LicenseSigned, authoring, issue, into_keys,
+    License, LicenseSigned, authoring, issue,
+)
+from .grants		import (
     Grant, into_Grant,
     Timespan, into_Timespan, Timestamp, into_Timestamp, into_Duration,
+)
+from .errors		import (
     LicenseIncompatibility
 )
 
 from .verification_test import (
     dominion_sigkey, awesome_sigkey, enduser_seed,
 )
+
+from ..misc		import pytz
+from ..			import ed25519
+
+from dns.exception	import DNSException
+from requests		import ConnectionError
+
 
 log				= logging.getLogger( "grant_test" )
 
@@ -458,9 +464,9 @@ def test_Grant_grants():
 
     # Check that the same License' Grants aren't included multiple times
     awesome_keypair		= authoring( seed=awesome_sigkey[:32] )
-    awesome_pubkey,_		= into_keys( awesome_keypair )
+    awesome_pubkey,_		= ed25519.into_keys( awesome_keypair )
     enduser_keypair		= authoring( seed=enduser_seed, why="from enduser seed" )
-    enduser_pubkey,_		= into_keys( enduser_keypair )
+    enduser_pubkey,_		= ed25519.into_keys( enduser_keypair )
     drv_dup			= License(
         author	= dict(
             name	= "Awesome, Inc.",
